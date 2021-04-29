@@ -100,7 +100,7 @@ void analyse_accums(int *scale_vector,
 
             float *d_accum_tmp = accum_list[s] + tile_offset;
 
-            analyseFFTDevice(scale_name, d_accum_tmp, d_masks, h_px_count, norm_factor, tau_count, tau_vector, q_count, q_vector, tile_count, scale, scale, frame_rate);
+            analyseFFTDevice(scale_name, d_accum_tmp, d_masks, h_px_count, norm_factor, tau_vector, tau_count, q_vector, q_count, tile_count, scale, scale, frame_rate);
         }
     }
 }
