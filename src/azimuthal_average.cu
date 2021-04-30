@@ -6,8 +6,7 @@
 
 #include "constants.hpp"
 #include "debug.hpp"
-#include "reduction.h"
-
+#include "azimuthal_average_kernel.cuh"
 
 inline unsigned int nextPow2(unsigned int x) {
   --x;
@@ -61,6 +60,8 @@ void writeIqtToFile(std::string filename,
 		exit(EXIT_FAILURE);
     }
 }
+
+// Host analysis
 
 ///////////////////////////////////////////////////////
 //	This function performs azimuthal averaging on the
@@ -130,6 +131,8 @@ void analyseFFTHost(std::string filename,
     // Finally write I(q, tau) to file
     writeIqtToFile(filename, iqtau, q_arr, q_count, tau_arr, tau_count, fps);
 }
+
+// Device analysis
 
 ///////////////////////////////////////////////////////
 //	This function builds azimuthal boolean pixel masks

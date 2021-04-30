@@ -148,40 +148,6 @@ void parseChunk(unsigned char *d_raw_in,
 }
 
 
-//void parseChunk(unsigned char *g_data_in,
-//				cufftReal *g_workspace,
-//				cufftComplex **g_list_out,
-//				int *scale_arr, int scale_count,
-//				video_info_struct info,
-//				int frame_count,
-//				cufftHandle *fft_plan_list,
-//				cudaStream_t stream) {
-//	int main_scale = scale_arr[0]; // largest length scale
-//
-//	for (int s = 0; s < scale_count; s++) {
-//		parseRaw(g_data_in, g_workspace, info.bpp, info.channel, info.w, info.h, info.x_off, info.y_off, frame_count);
-//	}
-//
-//
-//    int main_scale = scale_vector[0];
-//
-//    int x_dim = static_cast<int>(ceil(main_scale / static_cast<float>(BLOCKSIZE_X)));
-//    int y_dim = static_cast<int>(ceil(main_scale / static_cast<float>(BLOCKSIZE_Y)));
-//
-//    dim3 gridDim(x_dim, y_dim);
-//    dim3 blockDim(BLOCKSIZE_X, BLOCKSIZE_Y);
-//
-//    for (int s = 0; s < scale_count; s++) {
-//        int scale = scale_vector[s];
-//
-//        parseBufferScalePow2<<<gridDim, blockDim, 0, stream>>>(d_raw_in, d_workspace, info.bpp, 0, info.w, info.h, info.x_off, info.y_off, scale, main_scale, frame_count);
-//        cufftSetStream(fft_plan_list[s], stream);
-//
-//        int exe_code = cufftExecR2C(fft_plan_list[s], d_workspace, d_fft_list_out[s]);
-//        conditionAssert(exe_code == CUFFT_SUCCESS, "cuFFT execution failure", true);
-//    }
-//}
-
 
 void analyseChunk(cufftComplex **d_fft_buffer1,
                   cufftComplex **d_fft_buffer2,
@@ -230,14 +196,10 @@ void analyseChunk(cufftComplex **d_fft_buffer1,
 
 void runDDM(std::string file_in,
             std::string file_out,
-            int tau_count,
-            int *tau_vector,
-            int q_count,
-            float *q_vector,
-            int scale_count,
-            int *scale_vector,
-            int x_offset,
-            int y_offset,
+            int *tau_vector,	int tau_count,
+            float *q_vector, 	int q_count,
+            int *scale_vector,  int scale_count,
+            int x_offset, 		int y_offset,
             int total_frames,
             int chunk_frame_count,
             bool multistream,

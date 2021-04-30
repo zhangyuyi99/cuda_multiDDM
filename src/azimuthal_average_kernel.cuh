@@ -13,6 +13,9 @@
 #include <stdio.h>
 #include <cuda_runtime.h>
 
+#ifndef AZIMUTH_KERNEL
+#define AZIMUTH_KERNEL
+
 // Utility class used to avoid linker errors with extern
 // unsized shared memory arrays with templated type
 template <class T>
@@ -240,3 +243,4 @@ template void maskReduce<int>(int size, int threads, int blocks, int *d_idata, b
 template void maskReduce<float>(int size, int threads, int blocks, float *d_idata, bool *d_mask, float *d_odata);
 template void maskReduce<double>(int size, int threads, int blocks, double *d_idata, bool *d_mask, double *d_odata);
 
+#endif

@@ -2,8 +2,8 @@
 #include "constants.hpp"
 #include "video_reader.hpp"
 
-#ifndef KERNEL_DDM_CUH_
-#define KERNEL_DDM_CUH_
+#ifndef KERNEL_DDM
+#define KERNEL_DDM
 
 __global__ void parseBufferScale(const unsigned char* __restrict__ d_buffer,
                                  float* __restrict__ d_parsed,
@@ -101,4 +101,4 @@ __global__ void combineAccum(float* __restrict__ d_dataA,
 }
 
 
-#endif /* SRC_DDM_CUH_ */
+#endif

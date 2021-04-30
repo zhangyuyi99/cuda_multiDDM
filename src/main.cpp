@@ -9,56 +9,73 @@
 
 #include "debug.hpp"
 
+struct DDMparams {
+	std::string     file_in;
+	std::string     file_out;
+	std::string     q_file_name;	// file-path for q-vector
+	std::string     t_file_name;	// file-path for tau-vector
+	std::string		s_file_name;	// file-path for scale-vector
+
+	int    frame_count;				// number of frames to analyse
+	int    x_off 			= 0;    // number of pixels to offset x=0 by in frame
+	int    y_off 			= 0;	// number of pixels to offset y=0 by in frame
+	int    chunk_length		= 30;   // number of frames in frame buffer
+	int    rolling_purge	= 0;    // purge and analyse accumulators after number of frames
+
+	bool   use_frame_rate	= true;
+	bool   use_webcam 		= false;
+	bool   use_movie_file	= false;
+	int	   frame_rate;
+	int    webcam_idx 		= 0;
+	bool   multi_stream 	= true;
+	float  q_tolerence		= 1.2;
+} params;
+
+// forward declare main DDM function
 void runDDM(std::string file_in,
-        std::string file_out,
-        int tau_count,
-        int *tau_vector,
-        int q_count,
-        float *q_vector,
-        int scale_count,
-        int *scale_vector,
-        int x_offset,
-        int y_offset,
-        int total_frames,
-        int chunk_frame_count,
-        bool multistream,
-        bool use_webcam,
-        int webcam_idx,
-        float q_tolerance,
-        bool is_movie_file,
-        int movie_frame_rate,
-        int use_frame_rate,
-        int dump_accum_after);
+            std::string file_out,
+			int *tau_arr, 	int tau_count,
+			float *q_arr,	int q_count,
+			int *scale_arr, int scale_count,
+			int x_off,		int y_off,
+			int total_frames,
+			int chunk_frame_count,
+			bool multistream,
+			bool use_webcam,
+			int webcam_idx,
+			float q_tolerance,
+			bool is_movie_file,
+			int movie_frame_rate,
+			int use_frame_rate,
+			int dump_accum_after);
 
 void printHelp() {
     fprintf(stderr,
-            "\n     ## CUDA DDM HELP ## \n"
-                    "  gh455 2021\n"
-                    "\n"
-                    "  Usage ./ddm [OPTION]..\n"
-                    "  -h           Print out this help.\n"
-                    "   REQUIRED ARGS\n"
-                    "  -o PATH      Specify output path.\n"
-                    "  -N INT       Specify number of frames.\n"
-                    "  -q PATH      Specify path to q-value file (line separated).\n"
-                    "  -t PATH          Specify path to tau-value file (line separated). \n"
-                    "\n"
-                    "   OPTIONAL ARGS\n"
-                    "  -x SIZE      Set analysis width (defaults to image width).\n"
-                    "  -y SIZE      Set analysis height (defaults to image height).\n"
-                    "  -f PATH      Specify path to input video (either -f or -W option must be given).\n"
-                    "  -W INT       Use web-camera as input video, (web-camera number can be suplied, defaults to first connected camera).\n"
-                    "  -v           Set verbose mode.\n"
-                    "  -C SIZE      Set main chunk frame count, a buffer 3x chunk frame count will be allocated in memory (default 50 frames).\n"
-                    "  -Z           Turn off multi-steam (smaller memory footprint - slower execution time).\n"
-                    "  -Q INT       Set the q-vector mask tolerance - percent (integer only) (default 20 i.e. radial mask (1 - 1.2) * q).\n"
-                    "  -i OFFSET        Set x-offset (default 0).\n"
-                    "  -j OFFSET        Set y-offset (default 0).\n"
-                    "  -s STEP      Set under-sampling step size (default 1).\n"
-                    "  -r REPEATS       Set under-sampling repeat count (default 1).\n"
-                    "  -M FRAMERATE     Set input type to .moviefile (must specify integer frame rate).\n"
-                    "  -F           Use frame counts for tau-spacing (not 1 / FPS).\n"
-                    "  -G SIZE          Sub-divide analysis, buffer will be outputed and purged every SIZE chunks\n");
+    		"\n ~~ multiscale DDM - CUDA - HELP ~~ \n"
+    		" - G. Haskell (gh455) 2021"
+    		"\n"
+			"  Usage ./ddm [OPTION]..\n"
+			"  -h           Print out this help.\n"
+			"   REQUIRED ARGS\n"
+			"  -o PATH      Output filepath.\n"
+			"  -N INT       Number of frames to analyse.\n"
+			"  -Q PATH      Specify path to q-value file (line separated).\n"
+			"  -T PATH 		Specify path to tau-value file (line separated). \n"
+			"  -S PATH 		Specify path to scale-value file (line separated). \n"
+
+    		"   INPUT ARGS\n"
+			"  -f PATH      Specify path to input video (either -f or -W option must be given).\n"
+			"  -W INT       Use web-camera as input video, (web-camera number can be supplied, defaults to first connected camera).\n"
+
+			"   OPTIONAL ARGS\n"
+			"  -x OFFSET        Set x-offset (default 0).\n"
+			"  -y OFFSET        Set y-offset (default 0).\n"
+			"  -I           	Use frame indices for tau-labels not real time.\n"
+			"  -v			Verbose mode on.\n"
+			"  -Z           Turn off multi-steam (smaller memory footprint - slower execution time).\n"
+			"  -t INT       Set the q-vector mask tolerance - percent (integer only) (default 20 i.e. radial mask (1 - 1.2) * q).\n"
+			"  -C INT	    Set main chunk frame count, a buffer 3x chunk frame count will be allocated in memory (default 30 frames).\n"
+			"  -G SIZE          Sub-divide analysis, buffer will be output and purged every SIZE chunks\n");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -66,70 +83,18 @@ void printHelp() {
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char **argv) {
 
-    struct DDMparams {
-        std::string     file_in;
-        std::string     file_out;
-        std::string     q_file_name;
-        std::string     t_file_name;
-
-        int    frame_count;
-        int    x_offset;
-        int    y_offset;
-        int    step_size;
-        int    repeat_count;
-        int    buffer_length;
-        int    purge_cnum;
-
-        int    frame_rate;
-        bool            use_frame_rate;
-        bool            use_webcam;
-        int             webcam_idx;
-        bool            multi_stream;
-        float           q_tolerence;
-    };
-
-
-    printf("DDM Start\n");
-
-    DDMparams params {
-        .x_offset       = 0,
-        .y_offset       = 0,
-        .step_size      = 1,
-        .repeat_count   = 1,
-        .buffer_length  = 50, // 92 / 3
-        .purge_cnum     = 0,
-        .use_frame_rate = true,
-        .use_webcam     = false,
-        .webcam_idx     = -1,
-        .multi_stream   = true,
-        .q_tolerence    = 1.2,
-    };
+	printf("DDM Start\n");
 
     // Flags
-    bool supplied_input = false;
+    bool input_specified = false;
     bool movie_file = false;
 
     for (;;) {
-        switch (getopt(argc, argv, "hf:W::o:N:q:t:vC:ZQ:i:j:s:r:M:FG:")) {
+        switch (getopt(argc, argv, "ho:N:x:y:Q:T:S:If:W::vZt:C:M::G:")) {
             case '?':
             case 'h':
                 printHelp();
                 return -1;
-
-            case 'f':
-                params.file_in = optarg;
-                supplied_input = true;
-                continue;
-
-            case 'W':
-                params.use_webcam = true;
-                if (optarg == NULL) {
-                    params.webcam_idx = 0;
-                } else {
-                    params.webcam_idx = atoi(optarg);
-                }
-                supplied_input = true;
-                continue;
 
             case 'o':
                 params.file_out = optarg;
@@ -139,158 +104,173 @@ int main(int argc, char **argv) {
                 params.frame_count = atoi(optarg);
                 continue;
 
-            case 'q':
-                params.q_file_name = optarg;
+            case 'x':
+                 params.x_off = atoi(optarg);
+                 continue;
+
+             case 'y':
+                 params.y_off = atoi(optarg);
+                 continue;
+
+             case 'Q':
+                 params.q_file_name = optarg;
+                 continue;
+
+             case 'T':
+                 params.t_file_name = optarg;
+                 continue;
+
+             case 'S':
+                 params.s_file_name = optarg;
+                 continue;
+
+             case 'I':
+                 params.use_frame_rate = false;
+                 continue;
+
+            case 'f':
+            	{
+					conditionAssert(!input_specified, "Cannot use both in-filepath and web-cam option at same time.", true);
+
+					params.file_in = optarg;
+					input_specified = true;
+            	}
                 continue;
 
-            case 't':
-                params.t_file_name = optarg;
+            case 'W':
+            	{
+					conditionAssert(!input_specified, "Cannot use both in-filepath and web-cam option at same time.", true);
+
+					params.use_webcam = true;
+					if (optarg != NULL) {
+						params.webcam_idx = atoi(optarg);
+					}
+					input_specified = true;
+            	}
                 continue;
+
             case 'v':
                 setVerbose(true);
-                continue;
-
-            case 'C':
-                params.buffer_length = atoi(optarg) * 3;
                 continue;
 
             case 'Z':
                 params.multi_stream = false;
                 continue;
 
-            case 'Q':
-                {
-                    int tmp = atoi(optarg);
-                    params.q_tolerence = 1.0 + (tmp / 100.0);
-                }
-                continue;
+            case 't':
+            	{
+            		int tmp = atoi(optarg);
+            		params.q_tolerence = 1.0 + (tmp / 100.0);
+            	}
+            	continue;
 
-            case 'i':
-                params.x_offset = atoi(optarg);
-                continue;
-
-            case 'j':
-                params.y_offset = atoi(optarg);
-                continue;
-
-            case 's':
-                params.step_size = atoi(optarg);
-                continue;
-
-            case 'r':
-                params.repeat_count = atoi(optarg);
+            case 'C':
+                params.chunk_length = atoi(optarg);
                 continue;
 
             case 'M':
-                {
-                    movie_file = true;
-                    params.frame_rate = atoi(optarg);
-                }
-                continue;
-            case 'F':
-                params.use_frame_rate = false;
+            	{
+					params.use_movie_file = true;
+					params.frame_rate = atoi(optarg);
+            	}
                 continue;
 
             case 'G':
-                params.purge_cnum = atoi(optarg);
+                params.rolling_purge = atoi(optarg);
                 continue;
+
         }
         break;
     }
 
     if (optind != argc) {
         printHelp();
-        conditionAssert(false, "an unexpected option was found.", true);
+        conditionAssert(false, "An unexpected option was found.", true);
     }
 
-    conditionAssert(supplied_input, "must specify input.", true);
+    conditionAssert(input_specified, "Must specify input.", true);
 
-    int t;
-    float q;
     std::ifstream q_file(params.q_file_name);
     std::ifstream t_file(params.t_file_name);
+    std::ifstream s_file(params.s_file_name);
 
     conditionAssert(q_file.is_open(), "cannot open q-file.", true);
     conditionAssert(t_file.is_open(), "cannot open tau-file", true);
+    conditionAssert(s_file.is_open(), "cannot open scales-file.", true);
 
+    // First count number of elements in each file
 
+    float tmp_q;
     int q_count = 0;
-    while (q_file >> q) {
+    while (q_file >> tmp_q) {
         q_count++;
     }
 
+    int tmp_tau;
     int tau_count = 0;
-    while (t_file >> t) {
+    while (t_file >> tmp_tau) {
         tau_count++;
     }
+
+    int tmp_scale;
+    int scale_count = 0;
+    while (s_file >> tmp_scale) {
+    	scale_count++;
+    }
+
+    // Seek back to the beginning of the file and read the values
 
     q_file.clear();
     q_file.seekg(0, std::ios::beg);
     t_file.clear();
     t_file.seekg(0, std::ios::beg);
+    s_file.clear();
+    s_file.seekg(0, std::ios::beg);
 
-    float q_vector[q_count];
-    int tau_vector[tau_count];
+    float q_arr[q_count];
+    int tau_arr[tau_count];
+    int scale_arr[scale_count];
 
-    int idx = 0;
-    while (q_file >> q) {
-        q_vector[idx] = q;
+    int idx;
+
+    idx = 0;
+    while (q_file >> tmp_q) {
+        q_arr[idx] = tmp_q;
         idx++;
     }
 
     idx = 0;
-    while (t_file >> t) {
-        tau_vector[idx] = t;
+    while (t_file >> tmp_tau) {
+        tau_arr[idx] = tmp_tau;
         idx++;
     }
 
-    int scale_count = 3;
-    int scale_vector[scale_count] = {1024, 512, 256};
-
+    idx = 0;
+    while (s_file >> tmp_scale) {
+    	scale_arr[idx] = tmp_scale;
+        idx++;
+    }
 
     runDDM(params.file_in,
-           params.file_out,
-           tau_count,
-           tau_vector,
-           q_count,
-           q_vector,
-           scale_count,
-           scale_vector,
-           params.x_offset,
-           params.y_offset,
-           params.frame_count,
-           params.buffer_length/3,
-           params.multi_stream,
-           params.use_webcam,
-           params.webcam_idx,
-           params.q_tolerence,
-           movie_file,
-           params.frame_rate,
-           params.use_frame_rate,
-           0);
-
-//    run(params.file_in,
-//            params.file_out,
-//            movie_file,
-//            params.x_offset,
-//            params.y_offset,
-//            params.frame_count,
-//            params.repeat_count,
-//            params.step_size,
-//            scale_count,
-//            scale_vector,
-//            q_count,
-//            q_vector,
-//            tau_count,
-//            tau_vector,
-//            params.q_tolerence,
-//            params.buffer_length,
-//            params.multi_stream,
-//            params.frame_rate,
-//            params.use_frame_rate,
-//            params.use_webcam,
-//            params.webcam_idx,
-//            params.purge_cnum);
+    	   params.file_out,
+		   tau_arr,
+		   tau_count,
+		   q_arr,
+		   q_count,
+		   scale_arr,
+		   scale_count,
+		   params.x_off,
+		   params.y_off,
+		   params.frame_count,
+		   params.chunk_length,
+		   params.multi_stream,
+		   params.use_webcam,
+		   params.webcam_idx,
+		   params.q_tolerence,
+		   params.use_movie_file,
+		   params.frame_rate,
+		   params.frame_rate,
+		   params.rolling_purge);
 
     printf("DDM End\n");
 }

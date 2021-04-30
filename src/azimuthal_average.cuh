@@ -5,7 +5,6 @@
 
 void buildAzimuthMask(bool *d_mask_out, int *h_pixel_counts, float *q_arr, int q_count, float q_tolerance, int w, int h);
 
-
 void analyseFFTDevice(std::string filename,
 					  float *d_data_in,
 					  bool *d_mask,

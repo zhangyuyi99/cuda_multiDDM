@@ -1,5 +1,9 @@
 .*
 
+# Video files
+*.mp4
+*.movie
+
 # Prerequisites
 *.d
 
