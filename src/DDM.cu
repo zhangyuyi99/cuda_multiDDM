@@ -148,7 +148,6 @@ void parseChunk(unsigned char *d_raw_in,
 }
 
 
-
 void analyseChunk(cufftComplex **d_fft_buffer1,
                   cufftComplex **d_fft_buffer2,
                   float **d_fft_accum_list,
@@ -479,6 +478,16 @@ void runDDM(std::string file_in,
 
         total_device_memory += 1 * workspace_size;
     }
+
+    // uchar to float conversion table
+
+    float h_uchar_float_lookup[256];
+
+    for (int i = 0; i < 256; i++) {
+    	h_uchar_float_lookup[i] = static_cast<float>(i);
+    }
+    cudaMemcpyToSymbol(dk_uchar_float_lookup, h_uchar_float_lookup, sizeof(float)*256);
+
 
     size_t free_memory = 0;
     size_t total_memory = 0;

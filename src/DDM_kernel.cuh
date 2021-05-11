@@ -61,8 +61,11 @@ __global__ void parseBufferScalePow2(const unsigned char* __restrict__ d_buffer,
         const unsigned int new_idx = ((tile_y * tile_width) + tile_x) * (scale * scale) + (local_y * scale) + local_x;
 
         for (unsigned int f = 0; f < frame_count; f++) {
-            d_parsed[f * main_scale * main_scale + new_idx] =
-                    static_cast<float>(d_buffer[channel_pp * (f * img_width * img_height + (y + y_offset) * img_width + (x + x_offset)) + channel_idx]);
+            d_parsed[f * main_scale * main_scale + new_idx] = dk_uchar_float_lookup
+            		[d_buffer[channel_pp * (f * img_width * img_height + (y + y_offset) * img_width + (x + x_offset)) + channel_idx]];
+
+//            d_parsed[f * main_scale * main_scale + new_idx] = static_cast<float>(
+//            		d_buffer[channel_pp * (f * img_width * img_height + (y + y_offset) * img_width + (x + x_offset)) + channel_idx]);
         }
     }
 }
