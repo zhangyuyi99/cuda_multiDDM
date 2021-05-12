@@ -1,1 +1,1 @@
-/home/ghaskell/projects_Git/cuda_multiDDM/Debug/cuda_multiDDM -f "./red_colloids_0_5um.mp4" -o "./out/out" -Q "./q_vector.txt" -T "./tau_vector.txt" -S "./scale_vector.txt" -N 1500 -C 60 -v
+/home/ghaskell/projects_Git/cuda_multiDDM/Debug/cuda_multiDDM -f "./red_colloids_0_5um.mp4" -o "./out/out" -Q "./q_vector.txt" -T "./tau_vector.txt" -S "./scale_vector.txt" -N 1500 -C 60 -v -F 60

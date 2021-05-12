@@ -27,6 +27,7 @@ template <class T> inline void swap(T*& A, T*& B) {
     B = tmp;
 }
 
+
 // Function to swap three pointers, positional order important
 template <class T> inline void rotateThreePtr(T*& A, T*& B, T*& C) {
     T* tmp = A;
@@ -36,20 +37,22 @@ template <class T> inline void rotateThreePtr(T*& A, T*& B, T*& C) {
 }
 
 
-// If we choose to dual-stream the code then we must combine the FFT intensity accumulator
-// associated with each stream.
+///////////////////////////////////////////////////////
+// If we choose to dual-stream the code then we must
+// combine the FFT intensity accumulator associated with
+// each stream.
+///////////////////////////////////////////////////////
 inline void combineAccumulators(float **d_accum_list_A,
                                 float **d_accum_list_B,
-                                int *scale_vector,
-                                int scale_count,
+                                int *scale_arr,
+								int scale_count,
                                 int tau_count) {
 
-
     dim3 blockDim(BLOCKSIZE);
-    int main_scale = scale_vector[0];
+    int main_scale = scale_arr[0];
 
     for (int s = 0; s < scale_count; s++) {
-        int scale = scale_vector[s];
+        int scale = scale_arr[s];
         int tile_count = (main_scale / scale) * (main_scale / scale);
         int frame_size = (scale / 2 + 1) * scale * tile_count;
 
@@ -60,75 +63,75 @@ inline void combineAccumulators(float **d_accum_list_A,
 }
 
 
-void analyse_accums(int *scale_vector,
-                    int scale_count,
-                    float *q_vector,
-                    int q_count,
-                    int *tau_vector,
-                    int tau_count,
-                    int frames_analysed,
-                    float q_tolerance,
-                    std::string file_out,
-                    float **accum_list,
-                    int frame_rate) {
+///////////////////////////////////////////////////////
+//	This function handles analysis of the I(q, tau)
+//  accumulator. Given the inputed values of q it
+//  handles calculation of the azimuthal averages.
+///////////////////////////////////////////////////////
+void analyse_accums(int *scale_arr,	int scale_count,
+					float *q_arr,	int q_count,
+					int *tau_arr,	int tau_count,
+					int frames_analysed,
+					float q_tolerance,
+		            std::string file_out,
+		            float **accum_list,
+		            int framerate) {
 
-    int main_scale = scale_vector[0];
+	int main_scale = scale_arr[0]; // the largest length-scale
 
-    bool *d_masks;
+	bool *d_masks; // device pointer to reference the boolean azimuthal masks
 
-    gpuErrorCheck(cudaMalloc((void** ) &d_masks, sizeof(bool) * (main_scale / 2 + 1) * main_scale * q_count))
+	gpuErrorCheck(cudaMalloc((void** ) &d_masks, sizeof(bool) * (main_scale / 2 + 1) * main_scale * q_count))
 
-    int *h_px_count = new int[q_count * scale_count]();
-    float norm_factor = static_cast<float>(frames_analysed);
+	int *h_pixel_counts = new int[q_count * scale_count](); // host array to hold the number of pixels in each mask
 
-    float *q_vector_tmp = new float[q_count];
-    for (int s = 0; s < scale_count; s++) {
-        int scale = scale_vector[s];
-        int tile_count = (main_scale / scale) * (main_scale / scale);
-        int tile_size = (scale / 2 + 1) * scale;
+	float normalisation = 1.0 / static_cast<float>(frames_analysed);
 
-        for (int i = 0; i < q_count; i++) {
-            q_vector_tmp[i] = q_vector[i] * (scale / static_cast<float>(main_scale));
-        }
+	float *q_pixel_radius = new float[q_count]; // host array to hold temporary q values for each length-scale
 
-        buildAzimuthMask(d_masks, h_px_count, q_vector_tmp, q_count, q_tolerance, scale, scale);
+	for (int s = 0; s < scale_count; s++) {
+		int scale = scale_arr[s];
+		int tile_count = (main_scale / scale) * (main_scale / scale);
+		int tile_size = (scale / 2 + 1) * scale;
 
-        for (int tile_idx = 0; tile_idx < tile_count; tile_idx++) {
-            int tile_offset = tile_size * tile_idx;
+		for (int i = 0; i < q_count; i++) {
+			q_pixel_radius[i] = scale / (q_arr[i] / 2.0); // key conversion between pixel movement and q radius
+		}
 
-            std::string scale_name = file_out + std::to_string(scale) + "-" + std::to_string(tile_idx);
+		// Old format of the q-vectors assumed relative to largest scale
+//        for (int i = 0; i < q_count; i++) {
+//            q_vector_tmp[i] = q_vector[i] * (scale / static_cast<float>(main_scale));
+//        }
 
-            float *d_accum_tmp = accum_list[s] + tile_offset;
+        buildAzimuthMask(d_masks, h_pixel_counts, q_pixel_radius, q_count, q_tolerance, scale, scale);
 
-            analyseFFTDevice(scale_name, d_accum_tmp, d_masks, h_px_count, norm_factor, tau_vector, tau_count, q_vector, q_count, tile_count, scale, scale, frame_rate);
+        for (int tile_idx = 0; tile_idx < tile_count; tile_idx++) { // loop through each tile i.e. I(q, tau)_tile
+
+            std::string tmp_filename = file_out + std::to_string(scale) + "-" + std::to_string(tile_idx); //output filenames in the style ./<filename><scale>-<tile idx>
+
+            float *d_accum_tmp = accum_list[s] + tile_size * tile_idx;
+
+            analyseFFTDevice(tmp_filename, d_accum_tmp, d_masks, h_pixel_counts, normalisation, tau_arr, tau_count, q_arr, q_count, tile_count, scale, scale, framerate);
         }
     }
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
-//! This function handles the parsing of on-device raw (uchar) data into a float
-//! array, and the multi-scale FFT of this data to a list of cufftComplex arrays.
-//! @param g_raw_in input video frames in global memory
-//! @param g_fft_list_out, list of FFT frames for different length-scales
-//! @param w frame width in pixels
-//! @param h frame height in pixels
-//! @param frame_count number of frames in chunk
-//! @param scale_arr TODO
-//! @param scale_count TODO
-//! @param fft_plan_list TODO
-//! @param stream Stream to run GPU kernels on
+//  This function handles the parsing of on-device raw (uchar) data into a float
+//  array, and the multi-scale FFT of this data to a list of cufftComplex arrays.
 ////////////////////////////////////////////////////////////////////////////////
 void parseChunk(unsigned char *d_raw_in,
                 cufftComplex **d_fft_list_out,
                 float *d_workspace,
-                int scale_count,
-                int *scale_vector,
+                int *scale_arr,
+				int scale_count,
                 int frame_count,
                 video_info_struct info,
                 cufftHandle *fft_plan_list,
                 cudaStream_t stream) {
 
-    int main_scale = scale_vector[0];
+    int main_scale = scale_arr[0];
 
     int x_dim = static_cast<int>(ceil(main_scale / static_cast<float>(BLOCKSIZE_X)));
     int y_dim = static_cast<int>(ceil(main_scale / static_cast<float>(BLOCKSIZE_Y)));
@@ -137,7 +140,7 @@ void parseChunk(unsigned char *d_raw_in,
     dim3 blockDim(BLOCKSIZE_X, BLOCKSIZE_Y);
 
     for (int s = 0; s < scale_count; s++) {
-        int scale = scale_vector[s];
+        int scale = scale_arr[s];
 
         parseBufferScalePow2<<<gridDim, blockDim, 0, stream>>>(d_raw_in, d_workspace, info.bpp, 0, info.w, info.h, info.x_off, info.y_off, scale, main_scale, frame_count);
         cufftSetStream(fft_plan_list[s], stream);
@@ -206,9 +209,10 @@ void runDDM(std::string file_in,
             int webcam_idx,
             float q_tolerance,
             bool is_movie_file,
-            int movie_frame_rate,
+            int explicit_frame_rate,
             int use_frame_rate,
-            int dump_accum_after) {
+            int dump_accum_after,
+			bool use_explicit_frame_rate) {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     verbose("[multiDDM Begin]\n");
@@ -318,7 +322,7 @@ void runDDM(std::string file_in,
         conditionAssert(moviefile != NULL, "couldn't open .movie file", true);
 
         info = initFile(moviefile);
-        frame_rate = movie_frame_rate;
+        frame_rate = explicit_frame_rate;
 
     } else {
         if (use_webcam) {
@@ -347,6 +351,9 @@ void runDDM(std::string file_in,
 
     if (!use_frame_rate) {
         frame_rate = 1;  // using raw tau indices is same as FPS = 1
+    }
+    if (!use_explicit_frame_rate) {
+    	frame_rate = explicit_frame_rate;
     }
 
     info.x_off = x_offset;
@@ -623,7 +630,7 @@ void runDDM(std::string file_in,
 
     gpuErrorCheck(cudaMemcpyAsync(d_idle, h_chunk_nxt, chunk_size, cudaMemcpyHostToDevice, *stream_cur));
 
-    parseChunk(d_idle, d_start_list, d_workspace_cur, scale_count, scale_vector, chunk_frame_count, info, FFT_plan_list, *stream_cur);
+    parseChunk(d_idle, d_start_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur);
 
     gpuErrorCheck(cudaStreamSynchronize(*stream_cur));
 
@@ -632,7 +639,7 @@ void runDDM(std::string file_in,
 
         gpuErrorCheck(cudaMemcpyAsync(d_ready, h_chunk_cur, chunk_size, cudaMemcpyHostToDevice, *stream_cur));
 
-        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_count, scale_vector, chunk_frame_count, info, FFT_plan_list, *stream_cur);
+        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur);
 
         for (int frame_offset = 0; frame_offset < chunk_frame_count; frame_offset += 1) {
             analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, leftover_frames, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
@@ -694,7 +701,7 @@ void runDDM(std::string file_in,
         size_t extra_frames_size = sizeof(unsigned char) * leftover_frames * info.bpp * info.w * info.h;
 
         gpuErrorCheck(cudaMemcpyAsync(d_ready, h_chunk_cur, extra_frames_size, cudaMemcpyHostToDevice, *stream_cur));
-        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_count, scale_vector, leftover_frames, info, FFT_plan_list, *stream_cur);
+        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_vector, scale_count, leftover_frames, info, FFT_plan_list, *stream_cur);
 
         for (int frame_offset = 0; frame_offset < leftover_frames; frame_offset += 1) {
             analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, leftover_frames, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);

@@ -274,7 +274,7 @@ void analyseFFTDevice(std::string filename,
 
 				val *= 2; // account for symmetry
 				val /= static_cast<float>(h_px_count[q_idx]);
-				val /= norm_factor;
+				val *= norm_factor;
 			}
 
         	iq_tau[q_idx * tau_count + tau_idx] = val;

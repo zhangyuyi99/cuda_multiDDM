@@ -3,6 +3,8 @@
 import argparse 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+from pylab import cm
 import scipy.optimize as opt 
 
 def read_file(file_name):
@@ -42,6 +44,7 @@ def read_file(file_name):
 def dampend_osc(x, ampl, freq, tau, offset):
     return ampl * (1 - np.exp(np.cos(freq * x))) * np.exp(- x / tau) + offset
 
+
 def fit_iqtau(iqtau, q_vector, tau_vector):
     # Fits function of form 
     #    A * (1 - exp(- tau / T)) + B
@@ -50,7 +53,10 @@ def fit_iqtau(iqtau, q_vector, tau_vector):
 
     # Returns list of parsed q
 
-    func = lambda x, A, B, T: A * (1 - np.exp( - x  * T)) + B
+    # def func(x, A, B, T):
+    #     if (- (x  * T) >)
+
+    func = lambda x, A, B, T: A * (1 - np.exp( - x  * T, where=(- x  * T < 700))) + B
 
     params = []
     params_stds = []
@@ -106,8 +112,9 @@ def parseIqtau(iqtau, q_vector, q_factor=1):
     return iqtau, q_vector
 
 
-def plot_params(ax, q_vector, params, stds, plot_labels=True):
+def plot_params(ax, q_vector, params, stds):
     params = np.array(params)
+
     Ts = params[:, 2]
     Ts_err = stds[:, 2]
 
@@ -117,34 +124,21 @@ def plot_params(ax, q_vector, params, stds, plot_labels=True):
     # Best fit line    
 
     line_2 = lambda x, c: -2 * x + c
-    line_m = lambda x, m, c: m * x + c
 
-    popt_2, pcov_2 = opt.curve_fit(line_2, np.log(q_vector), np.log(Ts))
-    #popt_m, pcov_m = opt.curve_fit(line_m, np.log(q_vector), np.log(Ts))
+    popt, pcov = opt.curve_fit(line_2, np.log(q_vector), np.log(Ts))
+    stds = np.sqrt(np.diag(pcov))
+    lnD = -popt[0]
 
-    stds_2 = np.sqrt(np.diag(pcov_2))
-    #stds_m = np.sqrt(np.diag(pcov_m))
 
-    lnD = -popt_2[0]
 
-    #ax.set_title(r"Charateristic decay time $\tau$ versus the wave-vector q.")
+    label = r"$\tau$ =" + " {:.2f}".format(np.exp(popt[0]))  + " $q^{-2}$"  
 
-    label_2 = r"$\tau$ =" + " {:.2f}".format(np.exp(popt_2[0]))  + " $q^{-2}$"
-    #label_m = r"$\tau$ =" + " {:.2f}".format(np.exp(popt_m[1]))  + " $q^{" + "{:.2f}".format(popt_m[0]) + "}$"
-
-    ax.plot(q_vector, np.power(q_vector, -2) * np.exp(-lnD), "-k", alpha=0.2, label=label_2)
-    #ax.plot(q_vector, np.power(q_vector, popt_m[0]) * np.exp(popt_m[1]), "-r", label=label_m)
-
-    # Plot main data
-
-    ax.errorbar(q_vector, Ts, yerr=Ts_err, marker='+', linestyle="None", color="black")
-
+    
     D = np.exp(lnD)
-    D_err = stds_2[0] * D
+    D_err = stds[0] * D
 
-
-    txt = "Fitting of the data gives a value of the Stokes-Einstein diffusion coeffcient, $D_m$ $\equal$ {:.6f}".format(D) \
-        + " $\pm$ " +  "{:.6f}".format(D_err) + " $\mu m s^{-1}$"
+    txt = "Stokes-Einstein diffusion coeffcient, D = {:.6f}".format(D) \
+        + " +- " +  "{:.6f}".format(D_err) + "\tum^2 / s"
 
     print(txt)
 
@@ -153,72 +147,114 @@ def plot_params(ax, q_vector, params, stds, plot_labels=True):
 
     #fig.text(.5, .01, txt, ha='center')
 
-    if (plot_labels):
-        ax.set(xlabel=r"Spatial frequency q [$px^{-1}]$", ylabel=r"$\tau_c(q)$ [s]")
-        #ax.legend(loc="upper right")
-        ax.yaxis.labelpad = -10
+    #ax.set_title(r"Charateristic decay time $\tau_c$ versus the wave-vector q.")
+    ax.set(xlabel=r"Wavevector, q [$\mu m^{-1}]$")
+    ax.set(ylabel=r"Decay time, $\tau_c$ [s]")
+    #ax.legend(loc="upper right")
+    ax.yaxis.labelpad = -10
 
-    else:
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
+    ax.xaxis.set_tick_params(which='major', direction='in')
+    ax.xaxis.set_tick_params(which='minor',  direction='in')
+    ax.yaxis.set_tick_params(which='major',  direction='in')
+    ax.yaxis.set_tick_params(which='minor', direction='in')
+
+    ax.plot(q_vector, np.power(q_vector, -2) * np.exp(-lnD), "-k", alpha=0.2, label=label)
+    ax.errorbar(q_vector, Ts, yerr=Ts_err, marker='+', linestyle="None", color="black")
+    #ax.set_xticks(ax.get_xticks()[::2])
+    #ax.set_xlim(1e)
+
+    # line_m = lambda x, m, c: m * x + c
+    # stds_m = np.sqrt(np.diag(pcov_m))
+    # label_m = r"$\tau$ =" + " {:.2f}".format(np.exp(popt_m[1]))  + " $q^{" + "{:.2f}".format(popt_m[0]) + "}$"
+    # popt_m, pcov_m = opt.curve_fit(line_m, np.log(q_vector), np.log(Ts))
+    # ax.plot(q_vector, np.power(q_vector, popt_m[0]) * np.exp(popt_m[1]), "-r", label=label_m)
+
 
 
 
 if __name__ == "__main__":
+    MAX_Q = 10
+
     parser = argparse.ArgumentParser(description="Plot tiled Inensitiy graphs")
 
-    parser.add_argument("--root", metavar="FILES", nargs="+", help="file root path for the I(q ,t) input files")
+    parser.add_argument("--root", metavar="FILES", nargs=1, help="file root path for the I(q ,t) input files")
     parser.add_argument("--tiles", metavar="T", nargs="+", help="number of tiles in a full frame")
     parser.add_argument("--scales", metavar="N", nargs="+", help="scale size for each input I(q, t), i.e. frame size = N * N" )
+    parser.add_argument("--umpx", help="um per pixel")
 
     args = parser.parse_args()
-
-    root = args.root[0]
+    file_root = args.root[0]
 
     if not (len(args.tiles) == len(args.scales)):
         print("roots, scales and tiles must have same length.")
         raise argparse.ArgumentError
 
-    for idx, scale in enumerate(args.scales):
-        fig = plt.figure(idx)
+    plt.rcParams['font.size'] = 12
+    mpl.rcParams['mathtext.fontset'] = 'stix'
+    mpl.rcParams['font.family'] = 'STIXGeneral'
 
-        print(f"Scale {scale} x {scale}")
+    # Separate plot for each scale
+    for scale_idx, scale in enumerate(args.scales):
+        print(f"{scale} x {scale}")
 
-        tile_count = int(args.tiles[idx])
+        fig = plt.figure(scale_idx)
+        tile_count = int(args.tiles[scale_idx])
         side_len = int(np.ceil(np.sqrt(tile_count)))
-        
-        data = [read_file(root + str(scale) +  "-" + str(tidx)) for tidx in range(tile_count)]
+
+        data = [read_file(file_root + str(scale) +  "-" + str(x)) for x in range(tile_count)]
+
+        for tidx, (lamda_vector, tau_vector, iqtau) in enumerate(data):
+            q_vector  = np.power(lamda_vector, -1)
+            q_vector *= 2 * np.pi / float(args.umpx)
+
+            ax_isf = plt.subplot(side_len, 2 * side_len, 2 * (tidx+1) - 1)
+            ax_D   = plt.subplot(side_len, 2 * side_len, 2 * (tidx+1))
+
+            # Plot ISF vs tau
+            
+            q_count = min(MAX_Q, len(q_vector))
+
+            # Gen colurs from "tab10"
+            colors = cm.get_cmap("tab10", q_count)
+
+            ax_isf.xaxis.set_tick_params(which='major', direction='in')
+            ax_isf.xaxis.set_tick_params(which='minor',  direction='in')
+            ax_isf.yaxis.set_tick_params(which='major',  direction='in',)
+            ax_isf.yaxis.set_tick_params(which='minor', direction='in')
+
+            for qidx, q_val in enumerate(q_vector):
+                if (qidx > MAX_Q):
+                    break
+
+
+
+                ax_isf.plot(tau_vector, iqtau[qidx], label=f"q = {q_val}"+ " $\mu m^{-1}$", color=colors(qidx), marker="o", markersize=3, linestyle=None)
+            
+            plot_all_axes = True
+            if(plot_all_axes):
+                ax_isf.set(xlabel=r"Lag time $\tau$ [s]", ylabel=r"I(q, $\tau$) [a. u.]")
+            else:
+                ax_isf.get_xaxis().set_visible(False)
+                ax_isf.get_yaxis().set_visible(False)
+
+            # Plot Diffusion coeff
+
+            params, params_stds = fit_iqtau(iqtau, q_vector, tau_vector)
+
+            plot_params(ax_D, q_vector, params, params_stds)
+            #except:
+             #   print(f"Plotting failed for scale {scale}, tile idx {tidx}")
+
 
         # max_I = 0
         # for _, _, iqt in data:
         #     max_I = max(max_I, np.max(iqt))
 
         #fig.suptitle(r"I (q, $\tau$) vs Lagtime, Spatial frequency vs $\tau_c$"+ f"[frame size {args.scales[idx]} px. X {args.scales[idx]} px.]")
-        for tidx, (q_vector, tau_vector, iqtau) in enumerate(data):
-
-            ax = plt.subplot(side_len, 2*side_len, 2*(tidx+1) - 1)
-            ax2 = plt.subplot(side_len, 2*side_len, 2*(tidx+1))
-            
-            params, params_stds = fit_iqtau(iqtau, q_vector, tau_vector)
-
-            plot_axis = tidx == side_len * (side_len - 1)
-
-            try:
-                plot_params(ax2, q_vector, params, params_stds, plot_axis)
-            except:
-                print("fail")
-
-            for qidx, q_val in enumerate(q_vector):
-                ax.plot(tau_vector, iqtau[qidx], label=f"q = {q_val}"+ " $px^{-1}$")
-                # ax.set_ylim(0, max_I)
-                
-            if(plot_axis):
-                ax.set(xlabel=r"Lag time $\tau$ [s]", ylabel=r"I(q, $\tau$) [a. u.]")
-            else:
-                ax.get_xaxis().set_visible(False)
-                ax.get_yaxis().set_visible(False)
-
-            #ax.legend(loc="upper left")
+        # ax.legend(loc="upper left")
+    
+    
+    
     plt.autoscale()
 
     plt.show()

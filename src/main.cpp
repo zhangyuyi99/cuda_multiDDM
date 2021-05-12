@@ -26,6 +26,7 @@ struct DDMparams {
 	bool   use_webcam 		= false;
 	bool   use_movie_file	= false;
 	int	   frame_rate;
+	bool   explicit_fps		= false;
 	int    webcam_idx 		= 0;
 	bool   multi_stream 	= true;
 	float  q_tolerence		= 1.2;
@@ -45,9 +46,10 @@ void runDDM(std::string file_in,
 			int webcam_idx,
 			float q_tolerance,
 			bool is_movie_file,
-			int movie_frame_rate,
+			int frame_rate,
 			int use_frame_rate,
-			int dump_accum_after);
+			int dump_accum_after,
+			bool use_explicit_frame_rate);
 
 void printHelp() {
     fprintf(stderr,
@@ -75,7 +77,9 @@ void printHelp() {
 			"  -Z           Turn off multi-steam (smaller memory footprint - slower execution time).\n"
 			"  -t INT       Set the q-vector mask tolerance - percent (integer only) (default 20 i.e. radial mask (1 - 1.2) * q).\n"
 			"  -C INT	    Set main chunk frame count, a buffer 3x chunk frame count will be allocated in memory (default 30 frames).\n"
-			"  -G SIZE          Sub-divide analysis, buffer will be output and purged every SIZE chunks\n");
+			"  -G SIZE          Sub-divide analysis, buffer will be output and purged every SIZE chunks\n"
+    		"  -M FPS\n"
+    		"  -F FPS ");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -90,7 +94,7 @@ int main(int argc, char **argv) {
     bool movie_file = false;
 
     for (;;) {
-        switch (getopt(argc, argv, "ho:N:x:y:Q:T:S:If:W::vZt:C:M::G:")) {
+        switch (getopt(argc, argv, "ho:N:x:y:Q:T:S:If:W::vZt:C:M:G:F:")) {
             case '?':
             case 'h':
                 printHelp();
@@ -177,6 +181,13 @@ int main(int argc, char **argv) {
 
             case 'G':
                 params.rolling_purge = atoi(optarg);
+                continue;
+
+            case 'F':
+            	{
+                params.explicit_fps = true;
+                params.frame_rate = atoi(optarg);
+            	}
                 continue;
 
         }
@@ -270,7 +281,8 @@ int main(int argc, char **argv) {
 		   params.use_movie_file,
 		   params.frame_rate,
 		   params.frame_rate,
-		   params.rolling_purge);
+		   params.rolling_purge,
+		   params.explicit_fps);
 
     printf("DDM End\n");
 }
