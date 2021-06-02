@@ -1,5 +1,3 @@
-// Copyright 2021 George Haskell (gh455)
-
 #include <unistd.h>
 #include <stdio.h>
 
@@ -25,18 +23,19 @@ struct DDMparams {
 	bool   use_frame_rate	= true;
 	bool   use_webcam 		= false;
 	bool   use_movie_file	= false;
-	int	   frame_rate;
+	int	   frame_rate		= 1;
 	bool   explicit_fps		= false;
 	int    webcam_idx 		= 0;
 	bool   multi_stream 	= true;
 	float  q_tolerence		= 1.2;
+	bool   benchmark_mode 	= false;
 } params;
 
 // forward declare main DDM function
 void runDDM(std::string file_in,
             std::string file_out,
 			int *tau_arr, 	int tau_count,
-			float *q_arr,	int q_count,
+			float *lambda_arr,	int lambda_count,
 			int *scale_arr, int scale_count,
 			int x_off,		int y_off,
 			int total_frames,
@@ -49,25 +48,27 @@ void runDDM(std::string file_in,
 			int frame_rate,
 			int use_frame_rate,
 			int dump_accum_after,
-			bool use_explicit_frame_rate);
+			bool use_explicit_frame_rate,
+			bool benchmark_mode);
+
 
 void printHelp() {
     fprintf(stderr,
     		"\n ~~ multiscale DDM - CUDA - HELP ~~ \n"
-    		" - G. Haskell (gh455) 2021"
     		"\n"
 			"  Usage ./ddm [OPTION]..\n"
 			"  -h           Print out this help.\n"
 			"   REQUIRED ARGS\n"
 			"  -o PATH      Output filepath.\n"
 			"  -N INT       Number of frames to analyse.\n"
-			"  -Q PATH      Specify path to q-value file (line separated).\n"
+			"  -Q PATH      Specify path to lambda-value file (line separated).\n"
 			"  -T PATH 		Specify path to tau-value file (line separated). \n"
 			"  -S PATH 		Specify path to scale-value file (line separated). \n"
 
     		"   INPUT ARGS\n"
 			"  -f PATH      Specify path to input video (either -f or -W option must be given).\n"
 			"  -W INT       Use web-camera as input video, (web-camera number can be supplied, defaults to first connected camera).\n"
+    		"  -B 			Benchmark mode, will perform analysis on random data.\n"
 
 			"   OPTIONAL ARGS\n"
 			"  -x OFFSET        Set x-offset (default 0).\n"
@@ -78,8 +79,8 @@ void printHelp() {
 			"  -t INT       Set the q-vector mask tolerance - percent (integer only) (default 20 i.e. radial mask (1 - 1.2) * q).\n"
 			"  -C INT	    Set main chunk frame count, a buffer 3x chunk frame count will be allocated in memory (default 30 frames).\n"
 			"  -G SIZE          Sub-divide analysis, buffer will be output and purged every SIZE chunks\n"
-    		"  -M FPS\n"
-    		"  -F FPS ");
+    		"  -M FPS		Must be used if using movie-file file format. Argument to set frame-rate of movie-file.\n"
+    		"  -F FPS 		Force the analysis to assume a specific frame-rate, over-rides other options.");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -94,7 +95,7 @@ int main(int argc, char **argv) {
     bool movie_file = false;
 
     for (;;) {
-        switch (getopt(argc, argv, "ho:N:x:y:Q:T:S:If:W::vZt:C:M:G:F:")) {
+        switch (getopt(argc, argv, "ho:N:x:y:Q:T:S:If:W::vZt:C:M:G:F:B")) {
             case '?':
             case 'h':
                 printHelp();
@@ -153,6 +154,13 @@ int main(int argc, char **argv) {
             	}
                 continue;
 
+            case 'B':
+            	{
+                    params.benchmark_mode = true;
+					input_specified = true;
+            	}
+                continue;
+
             case 'v':
                 setVerbose(true);
                 continue;
@@ -190,6 +198,7 @@ int main(int argc, char **argv) {
             	}
                 continue;
 
+
         }
         break;
     }
@@ -205,16 +214,19 @@ int main(int argc, char **argv) {
     std::ifstream t_file(params.t_file_name);
     std::ifstream s_file(params.s_file_name);
 
-    conditionAssert(q_file.is_open(), "cannot open q-file.", true);
+    conditionAssert(q_file.is_open(), "cannot open lambda-file.", true);
     conditionAssert(t_file.is_open(), "cannot open tau-file", true);
     conditionAssert(s_file.is_open(), "cannot open scales-file.", true);
+
+
+    // Read scale, lambda and tau values
 
     // First count number of elements in each file
 
     float tmp_q;
-    int q_count = 0;
+    int lambda_count = 0;
     while (q_file >> tmp_q) {
-        q_count++;
+        lambda_count++;
     }
 
     int tmp_tau;
@@ -238,7 +250,7 @@ int main(int argc, char **argv) {
     s_file.clear();
     s_file.seekg(0, std::ios::beg);
 
-    float q_arr[q_count];
+    float lambda_arr[lambda_count];
     int tau_arr[tau_count];
     int scale_arr[scale_count];
 
@@ -246,7 +258,7 @@ int main(int argc, char **argv) {
 
     idx = 0;
     while (q_file >> tmp_q) {
-        q_arr[idx] = tmp_q;
+        lambda_arr[idx] = tmp_q;
         idx++;
     }
 
@@ -266,8 +278,8 @@ int main(int argc, char **argv) {
     	   params.file_out,
 		   tau_arr,
 		   tau_count,
-		   q_arr,
-		   q_count,
+		   lambda_arr,
+		   lambda_count,
 		   scale_arr,
 		   scale_count,
 		   params.x_off,
@@ -282,7 +294,8 @@ int main(int argc, char **argv) {
 		   params.frame_rate,
 		   params.frame_rate,
 		   params.rolling_purge,
-		   params.explicit_fps);
+		   params.explicit_fps,
+		   params.benchmark_mode);
 
     printf("DDM End\n");
 }

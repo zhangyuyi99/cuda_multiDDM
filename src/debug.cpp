@@ -15,10 +15,7 @@ void gpuAssert(cudaError_t code, const char *file, int line) {
 }
 
 bool Verbose = false;
-
-void setVerbose(bool setting) {
-    Verbose = setting;
-}
+void setVerbose(bool setting) { Verbose = setting; }
 
 int verbose( const char * format, ...) {
 	if ( !Verbose ) {

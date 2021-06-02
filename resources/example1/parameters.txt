@@ -1,8 +1,8 @@
 ﻿Parameters
 
 Length scales:
-574 – pixels per line pair
-17.96 line pairs / mm  (group 4, element 2)
+574 – pixels / line pair
+17.96 line pair / mm  (group 4, element 2)
 
 1 pixel = 0.09700 um
 

@@ -1,14 +1,12 @@
-// Copyright 2021 Jurij Kotar (jk400) & George Haskell (gh455)
-/*
- Video Reader
-
- This file provides functionality to read a variety of video formats into memory.
- Using openCV a wide variety of video sources can be managed (including handles
- to direct video streams such as web-cameras. Additionally functionality to deal
- with .moviefiles is included. .moviefile functionality is heavily based on the
- work of Jurij Kotar.
-
- */
+//////////////////////////////////////
+// Video Reader
+//
+// This file provides functionality to read a variety of video formats into memory.
+// Using OpenCV a wide variety of video sources can be managed (including handles
+// to direct video streams such as web-cameras. Additionally functionality to deal
+// with movie-files is included. Movie-file functionality is heavily based on the
+// work of Jurij Kotar.
+//////////////////////////////////////
 
 #include <stdint.h>
 #include <stdio.h>
@@ -26,43 +24,44 @@
 void loadMovieToHost(FILE *moviefile,        unsigned char *h_buffer, video_info_struct info, int frame_count);
 void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count);
 
-////////////////////////////////////////////////////////////////////////////////
-//  GENERAL LOADER
-////////////////////////////////////////////////////////////////////////////////
-
-void loadVideoToHost(bool is_movie_file, FILE *moviefile, cv::VideoCapture capture, unsigned char *h_buffer, video_info_struct info, int frame_count) {
-    if (is_movie_file) {
+///////////////////////////////////////////////////////
+//  This function acts as a general wrapper for file loading,
+//  calls the required method to load moive-file or standard video
+//  file as expected.
+///////////////////////////////////////////////////////
+void loadVideoToHost(bool is_movie_file, FILE *moviefile, cv::VideoCapture capture, unsigned char *h_buffer, video_info_struct info, int frame_count, bool benchmark_mode) {
+    if (benchmark_mode) { 	// If we are in bench-mark mode we skip loading a file to the host
+    	return;
+    } else if (is_movie_file) {
         loadMovieToHost(moviefile, h_buffer, info, frame_count);
     } else {
         loadCaptureToHost(capture, h_buffer, info, frame_count);
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// .MOVIEFILE
-////////////////////////////////////////////////////////////////////////////////
+
+// Movie-file functions
+
 
 // Common camera defines
-
-#define CAMERA_MOVIE_MAGIC 0x496d6554 // TemI
+#define CAMERA_MOVIE_MAGIC 0x496d6554 	// TemI
 #define CAMERA_MOVIE_VERSION 1
 #define CAMERA_TYPE_IIDC	1
 #define CAMERA_TYPE_ANDOR	2
 #define CAMERA_TYPE_XIMEA	3
 #define CAMERA_PIXELMODE_MONO_8		1
-#define CAMERA_PIXELMODE_MONO_16BE	2 // Big Endian
-#define CAMERA_PIXELMODE_MONO_16LE	3 // Little Endian
-
+#define CAMERA_PIXELMODE_MONO_16BE	2 	// Big-endian
+#define CAMERA_PIXELMODE_MONO_16LE	3 	// Little-endian
 #define IIDC_MOVIE_HEADER_LENGTH 172
 #define ANDOR_MOVIE_HEADER_LENGTH 128
 #define XIMEA_MOVIE_HEADER_LENGTH 240
 
+///////////////////////////////////////////////////////
+/// Before accessing the movie-file data we must first parse the header
+//  Generic header information is first extracted, followed by specific
+//  camera data.
+///////////////////////////////////////////////////////
 video_info_struct initFile(FILE *moviefile) {
-    /* Before accessing the .moviefile data we must first parse the header
-     * Generic header information is first extracted, followed by specific
-     * camera data.
-     */
-
     // Locate start of header using magic value
     long magic_offset = 0;
     bool found = false;
@@ -113,57 +112,62 @@ video_info_struct initFile(FILE *moviefile) {
 
     switch (camera_frame.type) {
     case CAMERA_TYPE_IIDC:
-        struct iidc_save_struct iidc_frame;
+    	{
+			struct iidc_save_struct iidc_frame;
 
-        if (fread(&iidc_frame, IIDC_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
-            fprintf(stderr,
-                    "[.moviefile Initialise Error] Corrupted header at offset %lu\n",
-                    ftell(moviefile));
-            exit(EXIT_FAILURE);
-        }
-        size_x = iidc_frame.i_size_x;
-        size_y = iidc_frame.i_size_y;
+			if (fread(&iidc_frame, IIDC_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+				fprintf(stderr,
+						"[.moviefile Initialise Error] Corrupted header at offset %lu\n",
+						ftell(moviefile));
+				exit(EXIT_FAILURE);
+			}
+			size_x = iidc_frame.i_size_x;
+			size_y = iidc_frame.i_size_y;
 
-        fseek(moviefile, -IIDC_MOVIE_HEADER_LENGTH, SEEK_CUR);
+			fseek(moviefile, -IIDC_MOVIE_HEADER_LENGTH, SEEK_CUR);
+    	}
         break;
 
     case CAMERA_TYPE_ANDOR:
-        struct andor_save_struct andor_frame;
+    	{
+			struct andor_save_struct andor_frame;
 
-        if (fread(&andor_frame, ANDOR_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
-            fprintf(stderr,
-                    "[.moviefile Initialise Error] Corrupted header at offset %lu\n",
-                    ftell(moviefile));
-            exit(EXIT_FAILURE);
-        }
-        size_x = (andor_frame.a_x_end - andor_frame.a_x_start + 1)
-                / andor_frame.a_x_bin;
-        size_y = (andor_frame.a_y_end - andor_frame.a_y_start + 1)
-                / andor_frame.a_y_bin;
+			if (fread(&andor_frame, ANDOR_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+				fprintf(stderr,
+						"[.moviefile Initialise Error] Corrupted header at offset %lu\n",
+						ftell(moviefile));
+				exit(EXIT_FAILURE);
+			}
+			size_x = (andor_frame.a_x_end - andor_frame.a_x_start + 1)
+					/ andor_frame.a_x_bin;
+			size_y = (andor_frame.a_y_end - andor_frame.a_y_start + 1)
+					/ andor_frame.a_y_bin;
 
-        fseek(moviefile, -ANDOR_MOVIE_HEADER_LENGTH, SEEK_CUR);
+			fseek(moviefile, -ANDOR_MOVIE_HEADER_LENGTH, SEEK_CUR);
+    	}
         break;
 
     case CAMERA_TYPE_XIMEA:
-        struct ximea_save_struct ximea_frame;
+    	{
+			struct ximea_save_struct ximea_frame;
 
-        if (fread(&ximea_frame, XIMEA_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
-            fprintf(stderr,
-                    "[.moviefile Initialise Error] Corrupted header at offset %lu\n",
-                    ftell(moviefile));
-            exit(EXIT_FAILURE);
-        }
-        size_x = ximea_frame.x_size_x;
-        size_y = ximea_frame.x_size_y;
+			if (fread(&ximea_frame, XIMEA_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+				fprintf(stderr,
+						"[.moviefile Initialise Error] Corrupted header at offset %lu\n",
+						ftell(moviefile));
+				exit(EXIT_FAILURE);
+			}
+			size_x = ximea_frame.x_size_x;
+			size_y = ximea_frame.x_size_y;
 
-        fseek(moviefile, -XIMEA_MOVIE_HEADER_LENGTH, SEEK_CUR);
+			fseek(moviefile, -XIMEA_MOVIE_HEADER_LENGTH, SEEK_CUR);
+    	}
         break;
 
     default:
         fprintf(stderr, "[.moviefile Initialise Error] Unsupported camera.\n");
         exit( EXIT_FAILURE);
         break;
-
     }
 
     video_info_struct out;
@@ -176,10 +180,12 @@ video_info_struct initFile(FILE *moviefile) {
     return out;
 }
 
-/* We use camera information from the initialise phase, technically each frame could be taken
- * by a different camera, however this is highly unlikely, choose to throw an error if frame header
- * unexpected than repeat slow file manipulation from initialise phase.
- */
+
+///////////////////////////////////////////////////////
+//  We use camera information from the initialise phase, technically each frame could be taken
+//  by a different camera, however this is highly unlikely, choose to throw an error if frame header
+//  unexpected than repeat slow file manipulation from initialise phase.
+///////////////////////////////////////////////////////
 void loadMovieToHost(FILE *moviefile, unsigned char *h_buffer, video_info_struct info, int frame_count) {
     nvtxRangePush(__FUNCTION__); // Nvidia profiling option (for use in nvvp)
 
@@ -233,17 +239,16 @@ void loadMovieToHost(FILE *moviefile, unsigned char *h_buffer, video_info_struct
     nvtxRangePop();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// openCV Video Reader
-////////////////////////////////////////////////////////////////////////////////
 
+// OpenCV video reader
 
+///////////////////////////////////////////////////////
 //	This function takes a openCV video capture and loads a specified number of frames into a given uchar
 //	pointer. The pointer must have a size at least [img.cols * img.rows * img.channels * frame_count]
 //	If the frame is continuous in memory and each element is a uchar (i.e. Mat type 0, 8, 16, 24) then we
 //	can do a direct memory copy. However if the image type is more complicated we do a much more time costly
 //	iteration over the whole image. As we deal with uchars only - can lose image fidelity!
-
+///////////////////////////////////////////////////////
 void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count) {
     nvtxRangePush(__FUNCTION__);  // Nvidia profiling option (for use in nvvp)
 
@@ -327,4 +332,6 @@ void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info
 
     nvtxRangePop();
 }
+
+
 

@@ -1,14 +1,8 @@
-/* Reduction code is based on reduction_example
- *
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
+//////////////////////////////////////
+//  Reduction code is based heavily on the reduction_example from Nvidia's CUDA SDK examples
+//  See "Optimizing parallel reduction in CUDA" - M. Harris for more details
+//  some tweaks in regard to adding Boolean mask made
+//////////////////////////////////////
 
 #include <stdio.h>
 #include <cuda_runtime.h>
@@ -31,7 +25,7 @@ struct SharedMemory {
   }
 };
 
-// specialize for double to avoid unaligned memory
+// Specialise for double to avoid unaligned memory
 // access compile errors
 template <>
 struct SharedMemory<double> {
@@ -239,7 +233,6 @@ void maskReduce(int size, int threads, int blocks, T *d_idata, bool *d_mask, T *
 	}
 }
 
-template void maskReduce<int>(int size, int threads, int blocks, int *d_idata, bool *d_mask, int *d_odata);
 template void maskReduce<float>(int size, int threads, int blocks, float *d_idata, bool *d_mask, float *d_odata);
 template void maskReduce<double>(int size, int threads, int blocks, double *d_idata, bool *d_mask, double *d_odata);
 

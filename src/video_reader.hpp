@@ -10,19 +10,20 @@
 #ifndef _VIDEO_READER_H_
 #define _VIDEO_READER_H_
 
+// Struct to contain basic video information
 struct video_info_struct {
     int w;
     int h;
     int x_off = 0;
     int y_off = 0;
-    int bpp; // bytes per pixel
-    uint32_t type;
-    uint32_t length; // total length of data in bytes
+    int bpp; 			// Bytes-per-pixel
+    uint32_t type; 		// Camera type
+    uint32_t length;	// Total length of data in bytes
 };
 
-void loadMovieToHost(FILE *moviefile, unsigned char *h_buffer, video_info_struct vid_info, int frame_count);
+void loadMovieToHost(FILE *mv, unsigned char *h_buff, video_info_struct vid_info, int frame_count);
 void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count);
-void loadVideoToHost(bool is_movie_file, FILE *moviefile, cv::VideoCapture capture, unsigned char *h_buffer, video_info_struct info, int frame_count);
+void loadVideoToHost(bool is_movie_file, FILE *mv, cv::VideoCapture cap, unsigned char *h_buff, video_info_struct info, int frame_count, bool benchmark_mode);
 
 video_info_struct initFile(FILE *moviefile);
 

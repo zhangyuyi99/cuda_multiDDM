@@ -1,0 +1,1 @@
+/home/ghaskell/projects_Git/cuda_multiDDM/Debug/cuda_multiDDM -W -o "./out/out" -Q "./lamda_vector.txt" -T "./tau_vector.txt" -S "./scale_vector.txt" -N 2100 -C 75 -v -x 600 -y 100

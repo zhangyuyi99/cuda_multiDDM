@@ -1,4 +1,8 @@
-// Code draws on Nvidia SDK reduction_example
+//////////////////////////////////////
+//  Reduction code is based heavily on the reduction_example from Nvidia's CUDA SDK examples
+//  See "Optimizing parallel reduction in CUDA" - M. Harris for more details
+//  some tweaks in regard to adding Boolean mask made
+//////////////////////////////////////
 
 #include <string>
 #include <iostream>
@@ -19,21 +23,21 @@ inline unsigned int nextPow2(unsigned int x) {
 }
 
 ///////////////////////////////////////////////////////
-//	Writes I(q, tau) to file. The format of the
+//	Writes ISF(lambda, tau) to file. The format of the
 //	output is described in detail in the documentation.
 ///////////////////////////////////////////////////////
 void writeIqtToFile(std::string filename,
-					float *iqtau,
-					float *q_arr, int q_count,
-					int *tau_arr, int tau_count,
+					float *ISF,
+					float *lambda_arr, int lamda_count,
+					int   *tau_arr,	   int tau_count,
 					int fps) {
 
     std::ofstream out_file(filename); // attempt to open file
 
     if (out_file.is_open()) {
-    	// q - values
-    	for (int qi = 0; qi < q_count; qi++) {
-    		out_file << q_arr[qi] << " ";
+    	// lambda - values
+    	for (int lidx = 0; lidx < lamda_count; lidx++) {
+    		out_file << lambda_arr[lidx] << " ";
     	}
 
     	out_file << "\n";
@@ -45,16 +49,17 @@ void writeIqtToFile(std::string filename,
 
     	out_file << "\n";
 
-    	// I(q, tau) - values
-		for (int qi = 0; qi < q_count; qi++) {
+    	// I(lambda, tau) - values
+		for (int li = 0; li < lamda_count; li++) {
 	    	for (int ti = 0; ti < tau_count; ti++) {
-	    		out_file << iqtau[qi * tau_count + ti] << " ";
+	    		out_file << ISF[li * tau_count + ti] << " ";
 	    	}
 	    	out_file << "\n";
 		}
 
 		out_file.close();
-		verbose("I(Q, tau) written to %s\n", filename.c_str());
+		verbose("I(lambda, tau) written to %s\n", filename.c_str());
+
     } else {
 		fprintf(stderr, "[Out Error] Unable to open %s.\n", filename.c_str());
 		exit(EXIT_FAILURE);
@@ -67,18 +72,17 @@ void writeIqtToFile(std::string filename,
 //	This function performs azimuthal averaging on the
 //	host (i.e. CPU), in almost all cases this is far slower
 //	than using the GPU, included for completeness.
+//  Returns ISF
 ///////////////////////////////////////////////////////
-void analyseFFTHost(std::string filename,
-					float *d_data_in,
+float * analyseFFTHost(float *d_data_in,
 					float norm_factor,
 					float *q_arr, int q_count,
 					int *tau_arr, int tau_count,
 					float q_tolerance,
 					int w, int h,
-					int tile_index,
-					int fps) {
+					int tile_index) {
 
-	float * iqtau = new float[tau_count * q_count];
+	float * ISF = new float[tau_count * q_count];
 
 	float q2_arr[q_count]; // array containing squared q-values
 	for (int i = 0; i < q_count; i++)
@@ -122,14 +126,13 @@ void analyseFFTHost(std::string filename,
 		            val /= px_count;
 		            val /= norm_factor;
 
-					iqtau[q_idx * tau_count + tau_idx] = val;
+		            ISF[q_idx * tau_count + tau_idx] = val;
 				}
 			}
 		}
     }
 
-    // Finally write I(q, tau) to file
-    writeIqtToFile(filename, iqtau, q_arr, q_count, tau_arr, tau_count, fps);
+    return ISF;
 }
 
 // Device analysis
@@ -195,51 +198,28 @@ void buildAzimuthMask(bool *d_mask_out,
 
 }
 
-///////// NVIDIA ////////
 
+///////////////////////////////////////////////////////
+// Code to perform masked (GPU) reduction of ISF
 // For now just use whole mask, in future could investigate
 // Performing 2 reductions on (w / 2) * (h / 2) as this would
 // most likely be a power of 2, for which reduction most optimised
-void analyseFFTDevice(std::string filename,
-					  float *d_data_in,
+///////////////////////////////////////////////////////
+float * analyseFFTDevice(float *d_data_in,
 					  bool *d_mask,
 					  int *h_px_count,
 					  float norm_factor,
-					  int *tau_arr, int tau_count,
-					  float *q_label_arr, int q_count,
+					  int tau_count,
+					  int q_count,
 					  int tile_count,
-					  int width,
-					  int height,
-					  int fps) {
+					  int w, int h) {
 
-	// TODO: move to boarder function
-	// get device capability, to avoid block/grid size exceed the upper bound
-	cudaDeviceProp prop;
-	int device;
-	gpuErrorCheck(cudaGetDevice(&device));
-	gpuErrorCheck(cudaGetDeviceProperties(&prop, device));
+	int n = (w / 2 + 1) * h;
 
-	int n = (width / 2 + 1) * height;
-
-	// Compute the number of threads and blocks to use for the given reduction
-	// kernel For the kernels >= 3, we set threads / block to the minimum of
-	// maxThreads and n/2.
+	// Compute the number of threads and blocks to use for the reduction kernel
 
 	int threads = (n < BLOCKSIZE * 2) ? nextPow2((n + 1) / 2) : BLOCKSIZE;
 	int blocks = (n + (threads * 2 - 1)) / (threads * 2);
-
-	if ((float)threads * blocks > (float)prop.maxGridSize[0] * prop.maxThreadsPerBlock) {
-		printf("[Reduction] Image is too large.\n");
-		exit(EXIT_FAILURE);
-	}
-
-	if (blocks > prop.maxGridSize[0]) {
-		printf("[Reduction] Grid size <%d> exceeds the device capability <%d>, set block size as "
-				"%d (original %d)\n", blocks, prop.maxGridSize[0], threads * 2, threads);
-
-		blocks /= 2;
-		threads *= 2;
-	}
 
 	blocks = (64 < blocks) ? 64 : blocks;
 
@@ -248,8 +228,7 @@ void analyseFFTDevice(std::string filename,
 
 	gpuErrorCheck(cudaMalloc((void **)&d_intermediateSums, sizeof(float) * blocks));
 
-
-	float * iq_tau = new float[tau_count * q_count]();
+	float * ISF = new float[tau_count * q_count]();
 	for (int tau_idx = 0; tau_idx < tau_count; tau_idx++) {
 		for (int q_idx = 0; q_idx < q_count; q_idx++) {
 
@@ -260,35 +239,26 @@ void analyseFFTDevice(std::string filename,
 				// execute the kernel
 				maskReduce<float>(n, threads, blocks, d_data_in + n*tau_idx*tile_count, d_mask + n*q_idx, d_intermediateSums);
 
-				// check if kernel execution generated an error
-				//getLastCudaError("Kernel execution failed");
-
-				// sum partial sums from each block on CPU TODO can do this on device too
 				// copy result from device to host
-				gpuErrorCheck(cudaMemcpy(h_intermediateSums, d_intermediateSums, blocks * sizeof(float),
-							 cudaMemcpyDeviceToHost));
+				gpuErrorCheck(cudaMemcpy(h_intermediateSums, d_intermediateSums, blocks * sizeof(float), cudaMemcpyDeviceToHost));
 
+				// sum partial sums from each block on CPU
 				for (int i = 0; i < blocks; i++) {
 					val += h_intermediateSums[i];
 				}
 
-				val *= 2; // account for symmetry
-				val /= static_cast<float>(h_px_count[q_idx]);
-				val *= norm_factor;
+				val *= 2; 										// account for symmetry
+				val /= static_cast<float>(h_px_count[q_idx]);	// divide by number of pixels
+				val *= norm_factor;								// normalise
 			}
 
-        	iq_tau[q_idx * tau_count + tau_idx] = val;
+			ISF[q_idx * tau_count + tau_idx] = val;
 		}
 	}
 
 	cudaDeviceSynchronize();
 
-    // Finally write I(q, tau) to file
-    writeIqtToFile(filename, iq_tau, q_label_arr, q_count, tau_arr, tau_count, fps);
-
-
+	return ISF;
 }
-
-///////// NVIDIA END ////////
 
 

@@ -5,6 +5,9 @@
 #ifndef KERNEL_DDM
 #define KERNEL_DDM
 
+///////////////////////////////////////////////////////
+// GPU function to parse the input video to get ready for FFT
+///////////////////////////////////////////////////////
 __global__ void parseBufferScale(const unsigned char* __restrict__ d_buffer,
                                  float* __restrict__ d_parsed,
                                  video_info_struct info,
@@ -16,7 +19,7 @@ __global__ void parseBufferScale(const unsigned char* __restrict__ d_buffer,
     int y = blockIdx.y * BLOCKSIZE_Y + threadIdx.y;
 
     if (x < main_scale && y < main_scale) {
-        int local_x = x % scale;
+        int local_x = x % scale;	// this operation is somewhat slow
         int local_y = y % scale;
 
         int tile_x = x / scale;
@@ -33,7 +36,10 @@ __global__ void parseBufferScale(const unsigned char* __restrict__ d_buffer,
     }
 }
 
-
+///////////////////////////////////////////////////////
+// More optimised GPU function to parse the input video to get ready for FFT,
+// Only works if frame size is a power of 2 - we take shortcut to avoid modulo operation
+///////////////////////////////////////////////////////
 __global__ void parseBufferScalePow2(const unsigned char* __restrict__ d_buffer,
                                     float* __restrict__ d_parsed,
                                     const unsigned int channel_pp,
@@ -50,7 +56,7 @@ __global__ void parseBufferScalePow2(const unsigned char* __restrict__ d_buffer,
     const unsigned int y = blockIdx.y * BLOCKSIZE_Y + threadIdx.y;
 
     if (x < main_scale && y < main_scale) {
-        const unsigned int local_x = x & (scale - 1); // x % scale
+        const unsigned int local_x = x & (scale - 1); // x % scale - bit twiddling hack
         const unsigned int local_y = y & (scale - 1); // y % scale
 
         const unsigned int tile_x = x / scale;
@@ -61,16 +67,20 @@ __global__ void parseBufferScalePow2(const unsigned char* __restrict__ d_buffer,
         const unsigned int new_idx = ((tile_y * tile_width) + tile_x) * (scale * scale) + (local_y * scale) + local_x;
 
         for (unsigned int f = 0; f < frame_count; f++) {
-            d_parsed[f * main_scale * main_scale + new_idx] = dk_uchar_float_lookup
-            		[d_buffer[channel_pp * (f * img_width * img_height + (y + y_offset) * img_width + (x + x_offset)) + channel_idx]];
 
-//            d_parsed[f * main_scale * main_scale + new_idx] = static_cast<float>(
-//            		d_buffer[channel_pp * (f * img_width * img_height + (y + y_offset) * img_width + (x + x_offset)) + channel_idx]);
+//            d_parsed[f * main_scale * main_scale + new_idx] = dk_uchar_float_lookup
+//            		[d_buffer[channel_pp * (f * img_width * img_height + (y + y_offset) * img_width + (x + x_offset)) + channel_idx]];
+
+            d_parsed[f * main_scale * main_scale + new_idx] = static_cast<float>(
+            		d_buffer[channel_pp * (f * img_width * img_height + (y + y_offset) * img_width + (x + x_offset)) + channel_idx]);
         }
     }
 }
 
 
+///////////////////////////////////////////////////////
+// GPU function to add the absolute magnitude of FFT to accumulator array
+///////////////////////////////////////////////////////
 __global__ void processFFT(const cufftComplex* __restrict__ d_dataA,
                            const cufftComplex* __restrict__ d_dataB,
                            float * __restrict__ d_odata,
@@ -89,6 +99,9 @@ __global__ void processFFT(const cufftComplex* __restrict__ d_dataA,
     }
 }
 
+///////////////////////////////////////////////////////
+// Simple GPU function to combine two accumulator arrays - for use if using CUDA streams
+///////////////////////////////////////////////////////
 __global__ void combineAccum(float* __restrict__ d_dataA,
                              const float* __restrict__ d_dataB,
                              int tau_count,

@@ -1,11 +1,10 @@
-// Copyright 2021 George Haskell (gh455)
-
 #include <stdio.h>
 #include <cuda_runtime.h>
 #include <cufft.h>
 #include <nvToolsExt.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -19,6 +18,7 @@
 #include "video_reader.hpp"
 
 #include "DDM_kernel.cuh"
+
 
 // Function to swap two pointers
 template <class T> inline void swap(T*& A, T*& B) {
@@ -69,10 +69,10 @@ inline void combineAccumulators(float **d_accum_list_A,
 //  handles calculation of the azimuthal averages.
 ///////////////////////////////////////////////////////
 void analyse_accums(int *scale_arr,	int scale_count,
-					float *q_arr,	int q_count,
+					float *lambda_arr,	int lambda_count,
 					int *tau_arr,	int tau_count,
 					int frames_analysed,
-					float q_tolerance,
+					float mask_tolerance,
 		            std::string file_out,
 		            float **accum_list,
 		            int framerate) {
@@ -81,29 +81,29 @@ void analyse_accums(int *scale_arr,	int scale_count,
 
 	bool *d_masks; // device pointer to reference the boolean azimuthal masks
 
-	gpuErrorCheck(cudaMalloc((void** ) &d_masks, sizeof(bool) * (main_scale / 2 + 1) * main_scale * q_count))
+	gpuErrorCheck(cudaMalloc((void** ) &d_masks, sizeof(bool) * (main_scale / 2 + 1) * main_scale * lambda_count))
 
-	int *h_pixel_counts = new int[q_count * scale_count](); // host array to hold the number of pixels in each mask
+	int *h_pixel_counts = new int[lambda_count * scale_count](); // host array to hold the number of pixels in each mask
 
 	float normalisation = 1.0 / static_cast<float>(frames_analysed);
 
-	float *q_pixel_radius = new float[q_count]; // host array to hold temporary q values for each length-scale
+	float *q_pixel_radius = new float[lambda_count]; // host array to hold temporary q values for each length-scale
 
 	for (int s = 0; s < scale_count; s++) {
 		int scale = scale_arr[s];
 		int tile_count = (main_scale / scale) * (main_scale / scale);
 		int tile_size = (scale / 2 + 1) * scale;
 
-		for (int i = 0; i < q_count; i++) {
-			q_pixel_radius[i] = scale / (q_arr[i] / 2.0); // key conversion between pixel movement and q radius
+		for (int i = 0; i < lambda_count; i++) {
+			q_pixel_radius[i] = static_cast<float>(scale) / (lambda_arr[i]); // key conversion between pixel movement and q radius
 		}
 
 		// Old format of the q-vectors assumed relative to largest scale
-//        for (int i = 0; i < q_count; i++) {
-//            q_vector_tmp[i] = q_vector[i] * (scale / static_cast<float>(main_scale));
+//        for (int i = 0; i < lambda_count; i++) {
+//            lambda_arr_tmp[i] = lambda_arr[i] * (scale / static_cast<float>(main_scale));
 //        }
 
-        buildAzimuthMask(d_masks, h_pixel_counts, q_pixel_radius, q_count, q_tolerance, scale, scale);
+        buildAzimuthMask(d_masks, h_pixel_counts, q_pixel_radius, lambda_count, mask_tolerance, scale, scale);
 
         for (int tile_idx = 0; tile_idx < tile_count; tile_idx++) { // loop through each tile i.e. I(q, tau)_tile
 
@@ -111,7 +111,10 @@ void analyse_accums(int *scale_arr,	int scale_count,
 
             float *d_accum_tmp = accum_list[s] + tile_size * tile_idx;
 
-            analyseFFTDevice(tmp_filename, d_accum_tmp, d_masks, h_pixel_counts, normalisation, tau_arr, tau_count, q_arr, q_count, tile_count, scale, scale, framerate);
+            float *ISF = analyseFFTDevice(d_accum_tmp, d_masks, h_pixel_counts, normalisation, tau_count, lambda_count, tile_count, scale, scale);
+
+            // Finally write I(q, tau) to file
+            writeIqtToFile(tmp_filename, ISF, lambda_arr, lambda_count, tau_arr, tau_count, framerate);
         }
     }
 }
@@ -151,6 +154,10 @@ void parseChunk(unsigned char *d_raw_in,
 }
 
 
+////////////////////////////////////////////////////////////////////////////////
+//  This function handles the analysis of the FFT, i.e. handles the calculation
+//  of the difference functions. Makes use of 3-section circular buffer - see project
+////////////////////////////////////////////////////////////////////////////////
 void analyseChunk(cufftComplex **d_fft_buffer1,
                   cufftComplex **d_fft_buffer2,
                   float **d_fft_accum_list,
@@ -173,22 +180,21 @@ void analyseChunk(cufftComplex **d_fft_buffer1,
         int frame_size = (scale / 2 + 1) * scale * tile_count;
 
         int px_count = scale * scale;
-        float fft_norm = 1.0f / px_count;
+        float fft_norm = 1.0f / px_count; // factor to normalise the FFT
 
         dim3 gridDim(static_cast<int>(ceil(frame_size / static_cast<float>(BLOCKSIZE))));
 
         int frames_left = chunk_frame_count - frame_offset;
 
-        cufftComplex *tmp;
-
+        cufftComplex *tmp; // index pointer
         for (int t = 0; t < tau_count; t++) {
-            if (tau_vector[t] < frames_left) {
+            if (tau_vector[t] < frames_left) { // check to see if second index is in next chunk
                 tmp = d_fft_buffer1[s] + (frame_offset + tau_vector[t]) * frame_size;
             } else {
                 tmp = d_fft_buffer2[s] + (tau_vector[t] - frames_left) * frame_size;
             }
 
-            float *accum_out = d_fft_accum_list[s] + frame_size * t;
+            float *accum_out = d_fft_accum_list[s] + frame_size * t; // tmp pointer for position in accumulator array
 
             processFFT<<<gridDim, blockDim, 0, stream>>>(d_fft_buffer1[s] + frame_size * frame_offset, tmp, accum_out, fft_norm, frame_size);
         }
@@ -196,10 +202,13 @@ void analyseChunk(cufftComplex **d_fft_buffer1,
 }
 
 
+////////////////////////////////////////////////////////////////////////////////
+//  Main multi-DDM function
+////////////////////////////////////////////////////////////////////////////////
 void runDDM(std::string file_in,
             std::string file_out,
             int *tau_vector,	int tau_count,
-            float *q_vector, 	int q_count,
+            float *lambda_arr, 	int lambda_count,
             int *scale_vector,  int scale_count,
             int x_offset, 		int y_offset,
             int total_frames,
@@ -207,45 +216,16 @@ void runDDM(std::string file_in,
             bool multistream,
             bool use_webcam,
             int webcam_idx,
-            float q_tolerance,
+            float mask_tolerance,
             bool is_movie_file,
             int explicit_frame_rate,
             int use_frame_rate,
             int dump_accum_after,
-			bool use_explicit_frame_rate) {
+			bool use_explicit_frame_rate,
+			bool benchmark_mode) {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     verbose("[multiDDM Begin]\n");
-
-    if (use_webcam) {
-        cv::VideoCapture tmp_cap(webcam_idx);
-
-        int main_scale = scale_vector[0];
-
-        while(1) {
-            cv::Mat tmp_frame;
-            tmp_cap >> tmp_frame;
-
-            for (int s = 0; s < scale_count; s++) {
-                int scale = scale_vector[s];
-                int tiles_per_side = (main_scale / scale);
-                int tiles_per_frame = tiles_per_side * tiles_per_side;
-
-                for (int t = 0; t < tiles_per_frame; t++) {
-                    cv::Rect rect(y_offset + (t / tiles_per_side) * scale + s, x_offset + (t % tiles_per_side) * scale + s, scale, scale); // add s to each to help with readibility
-                    cv::rectangle(tmp_frame, rect, cv::Scalar(0, 255, 0));
-                }
-            }
-            cv::imshow( "Webcam", tmp_frame );
-
-            char c=(char) cv::waitKey(25);
-            if(c==27)
-                break;
-        }
-        tmp_cap.release();
-        cv::destroyAllWindows();
-    }
-
 
     //////////
     ///  CUDA Check
@@ -270,7 +250,7 @@ void runDDM(std::string file_in,
     // Can make assumptions later if tau / q / scale arrays are in known order
 
     std::sort(tau_vector, tau_vector + tau_count);
-    std::sort(q_vector, q_vector + q_count);
+    std::sort(lambda_arr, lambda_arr + lambda_count);
     std::sort(scale_vector, scale_vector + scale_count, std::greater<int>());
 
     //////////
@@ -292,24 +272,54 @@ void runDDM(std::string file_in,
         conditionAssert((tau_vector[t] < tau_vector[t + 1]), "Tau vector should be ascending order", true);
     }
 
-    for (int q = 0; q < q_count - 1; q++) {
-        conditionAssert((q_vector[q] >= 0), "q-vector values should be positive", true);
-        conditionAssert((q_vector[q] < q_vector[q + 1]), "q-vector vector should be ascending order", true);
+    for (int q = 0; q < lambda_count - 1; q++) {
+        conditionAssert((lambda_arr[q] >= 0), "q-vector values should be positive", true);
+        conditionAssert((lambda_arr[q] < lambda_arr[q + 1]), "q-vector vector should be ascending order", true);
     }
 
-    conditionAssert(q_tolerance < 10 && q_tolerance > 1.0,
-            "q_tolerance is likely undesired value, refer to README for more information");
+    conditionAssert(mask_tolerance < 10 && mask_tolerance > 1.0,
+            "mask_tolerance is likely undesired value, refer to README for more information");
 
-    conditionAssert(q_vector[q_count-1] <= scale_vector[scale_count-1],
+    conditionAssert(lambda_arr[lambda_count-1] <= scale_vector[scale_count-1],
             "The largest q-vector should be smaller than the smallest scale.", true);
 
     verbose("%d tau-values.\n", tau_count);
-    verbose("%d q-vector values.\n", q_count);
+    verbose("%d q-vector values.\n", lambda_count);
 
     verbose("Parameter Check Done.\n");
     //////////
     ///  Video Setup
     //////////
+
+    // Web-cam alignment
+    if (use_webcam) {
+        cv::VideoCapture tmp_cap(webcam_idx);
+
+        int main_scale = scale_vector[0];
+
+        while(1) {
+            cv::Mat tmp_frame;
+            tmp_cap >> tmp_frame;
+
+            for (int s = 0; s < scale_count; s++) {
+                int scale = scale_vector[s];
+                int tiles_per_side = (main_scale / scale);
+                int tiles_per_frame = tiles_per_side * tiles_per_side;
+
+                for (int t = 0; t < tiles_per_frame; t++) {
+                    cv::Rect rect(x_offset + (t / tiles_per_side) * scale + s, y_offset + (t % tiles_per_side) * scale + s, scale, scale); // add s to each to help with readability
+                    cv::rectangle(tmp_frame, rect, cv::Scalar(0, 255, 0));
+                }
+            }
+            cv::imshow( "Web-cam", tmp_frame );
+
+            char c=(char) cv::waitKey(25);
+            if(c==27)
+                break;
+        }
+        tmp_cap.release();
+        cv::destroyAllWindows();
+    }
 
     video_info_struct info;
     FILE *moviefile;
@@ -317,14 +327,20 @@ void runDDM(std::string file_in,
 
     int frame_rate;
 
-    if (is_movie_file) { // if we have a .moviefile folder we open with own custom reader
+    if (benchmark_mode) {
+    	info.w = scale_vector[0];
+    	info.h = scale_vector[0];
+    	info.bpp = 1;
+    	frame_rate = 1;
+
+    } else if (is_movie_file) { // if we have a .moviefile folder we open with own custom reader
         moviefile = fopen(file_in.c_str(), "rb");
         conditionAssert(moviefile != NULL, "couldn't open .movie file", true);
 
         info = initFile(moviefile);
         frame_rate = explicit_frame_rate;
 
-    } else {
+    } else { // openCV
         if (use_webcam) {
             cap = cv::VideoCapture(webcam_idx);
         } else {
@@ -349,10 +365,11 @@ void runDDM(std::string file_in,
             cap = cv::VideoCapture(file_in); // re-open so can view first frame again
     }
 
+
     if (!use_frame_rate) {
         frame_rate = 1;  // using raw tau indices is same as FPS = 1
     }
-    if (!use_explicit_frame_rate) {
+    if (use_explicit_frame_rate) {
     	frame_rate = explicit_frame_rate;
     }
 
@@ -426,6 +443,14 @@ void runDDM(std::string file_in,
         total_host_memory += 1 * chunk_size;
     }
 
+
+    if (benchmark_mode) {
+    	verbose("Benchmark mode - filling host buffer with random data.\n");
+    	for (int i = 0; i < info.bpp * info.w * info.h; i++) {
+    		h_chunk_1[i] = static_cast<unsigned char>(rand() % 255);
+    		h_chunk_2[i] = static_cast<unsigned char>(rand() % 255);
+    	}
+    }
     // work space (multi-stream)
     size_t workspace_size = sizeof(float) * chunk_frame_count * main_scale * main_scale;
 
@@ -486,14 +511,15 @@ void runDDM(std::string file_in,
         total_device_memory += 1 * workspace_size;
     }
 
-    // uchar to float conversion table
-
-    float h_uchar_float_lookup[256];
-
-    for (int i = 0; i < 256; i++) {
-    	h_uchar_float_lookup[i] = static_cast<float>(i);
-    }
-    cudaMemcpyToSymbol(dk_uchar_float_lookup, h_uchar_float_lookup, sizeof(float)*256);
+    // If we wish to scale the input unsinged chars we can do so using a lookup table
+    // however in normal operation we don't scale so faster to use a conversion
+//
+//    float h_uchar_float_lookup[256];
+//
+//    for (int i = 0; i < 256; i++) {
+//    	h_uchar_float_lookup[i] = static_cast<float>(i);
+//    }
+//    cudaMemcpyToSymbol(dk_uchar_float_lookup, h_uchar_float_lookup, sizeof(float)*256);
 
 
     size_t free_memory = 0;
@@ -557,7 +583,7 @@ void runDDM(std::string file_in,
     ///  Pointer Allocation
     //////////
 
-    // FFT'd buffer & FFT intensity accumulator are scale dependent
+    // FFT'd buffer & FFT intensity accumulator are scale dependent so we define a array to hold values for each scale
 
     float **d_accum_list_1 = new float*[scale_count];
     float **d_accum_list_2 = new float*[scale_count];
@@ -625,8 +651,8 @@ void runDDM(std::string file_in,
 
     // Initialise CPU memory (h_ready / idle)
 
-    loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, chunk_frame_count);
-    loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_cur, info, chunk_frame_count); // puts chunk data into pinned host memory
+    loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, chunk_frame_count, benchmark_mode);
+    loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_cur, info, chunk_frame_count, benchmark_mode); // puts chunk data into pinned host memory
 
     gpuErrorCheck(cudaMemcpyAsync(d_idle, h_chunk_nxt, chunk_size, cudaMemcpyHostToDevice, *stream_cur));
 
@@ -649,9 +675,9 @@ void runDDM(std::string file_in,
         gpuErrorCheck(cudaStreamSynchronize(*stream_nxt));
 
         if (total_chunks - chunk_index > 2) {
-            loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, chunk_frame_count);
+            loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, chunk_frame_count, benchmark_mode);
         } else if (leftover_frames != 0 && total_chunks - chunk_index == 2) {
-            loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, leftover_frames);
+            loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, leftover_frames, benchmark_mode);
         }
 
         //// Pointer swap
@@ -679,7 +705,7 @@ void runDDM(std::string file_in,
 
             std::string tmp_name = file_out + "_t" + std::to_string(chunks_already_parsed / dump_accum_after) + "_";
 
-            analyse_accums(scale_vector, scale_count, q_vector, q_count, tau_vector, tau_count, tmp_frame_count, q_tolerance, tmp_name, d_accum_list_cur, frame_rate);
+            analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, tmp_frame_count, mask_tolerance, tmp_name, d_accum_list_cur, frame_rate);
 
             verbose("[Purging Accumulator]\n");
 
@@ -715,19 +741,14 @@ void runDDM(std::string file_in,
         cufftDestroy(FFT_plan_list[s]);
     }
 
+    // Free memory locations we no longer need
+
     cudaFree(h_chunk_1);
     cudaFree(h_chunk_2);
     cudaFree(d_buffer);
     cudaFree(d_fft_buffer);
     cudaFree(d_workspace_1);
     cudaFree(d_workspace_2);
-
-//    delete FFT_plan_list;
-//    delete d_accum_list_1;
-//    delete d_accum_list_2;
-//    delete d_start_list;
-//    delete d_junk_list;
-//    delete d_end_list;
 
     if (multistream) {
         combineAccumulators(d_accum_list_cur, d_accum_list_nxt, scale_vector, scale_count, tau_count);
@@ -740,7 +761,7 @@ void runDDM(std::string file_in,
     verbose("Analysis.\n");
 
     int frames_left = total_frames - chunks_already_parsed * chunk_frame_count;
-    analyse_accums(scale_vector, scale_count, q_vector, q_count, tau_vector, tau_count, frames_left, q_tolerance, file_out, d_accum_list_cur, frame_rate);
+    analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, frames_left, mask_tolerance, file_out, d_accum_list_cur, frame_rate);
 
     cudaDeviceSynchronize();
     cudaFree(d_accum_1);
@@ -751,6 +772,7 @@ void runDDM(std::string file_in,
             > (end_main - start_time).count();
     auto duration2 = std::chrono::duration_cast < std::chrono::microseconds
             > (end_out - end_main).count();
+
     printf("[Time elapsed] "
            "\n\tMain:\t\t%f s, "
            "\n\tRadial Average:\t%f s,"
