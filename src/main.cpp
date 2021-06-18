@@ -44,7 +44,6 @@ void runDDM(std::string file_in,
 			bool use_webcam,
 			int webcam_idx,
 			float q_tolerance,
-			bool is_movie_file,
 			int frame_rate,
 			int use_frame_rate,
 			int dump_accum_after,
@@ -79,7 +78,6 @@ void printHelp() {
 			"  -t INT       Set the q-vector mask tolerance - percent (integer only) (default 20 i.e. radial mask (1 - 1.2) * q).\n"
 			"  -C INT	    Set main chunk frame count, a buffer 3x chunk frame count will be allocated in memory (default 30 frames).\n"
 			"  -G SIZE          Sub-divide analysis, buffer will be output and purged every SIZE chunks\n"
-    		"  -M FPS		Must be used if using movie-file file format. Argument to set frame-rate of movie-file.\n"
     		"  -F FPS 		Force the analysis to assume a specific frame-rate, over-rides other options.");
 }
 
@@ -178,13 +176,6 @@ int main(int argc, char **argv) {
 
             case 'C':
                 params.chunk_length = atoi(optarg);
-                continue;
-
-            case 'M':
-            	{
-					params.use_movie_file = true;
-					params.frame_rate = atoi(optarg);
-            	}
                 continue;
 
             case 'G':
@@ -290,7 +281,7 @@ int main(int argc, char **argv) {
 		   params.use_webcam,
 		   params.webcam_idx,
 		   params.q_tolerence,
-		   params.use_movie_file,
+//		   params.use_movie_file,
 		   params.frame_rate,
 		   params.frame_rate,
 		   params.rolling_purge,

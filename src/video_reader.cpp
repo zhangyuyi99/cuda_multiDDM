@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <nvToolsExt.h>
-#include <opencv2/opencv.hpp>
+//#include <opencv2/opencv.hpp>
 
 #include <iostream>
 #include <string>
@@ -22,21 +22,23 @@
 #include "debug.hpp"
 
 void loadMovieToHost(FILE *moviefile,        unsigned char *h_buffer, video_info_struct info, int frame_count);
-void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count);
+//void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count);
 
 ///////////////////////////////////////////////////////
 //  This function acts as a general wrapper for file loading,
 //  calls the required method to load moive-file or standard video
 //  file as expected.
 ///////////////////////////////////////////////////////
-void loadVideoToHost(bool is_movie_file, FILE *moviefile, cv::VideoCapture capture, unsigned char *h_buffer, video_info_struct info, int frame_count, bool benchmark_mode) {
+//void loadVideoToHost(bool is_movie_file, FILE *moviefile, cv::VideoCapture capture, unsigned char *h_buffer, video_info_struct info, int frame_count, bool benchmark_mode) {
+void loadVideoToHost(bool is_movie_file, FILE *moviefile, unsigned char *h_buffer, video_info_struct info, int frame_count, bool benchmark_mode) {
     if (benchmark_mode) { 	// If we are in bench-mark mode we skip loading a file to the host
     	return;
     } else if (is_movie_file) {
         loadMovieToHost(moviefile, h_buffer, info, frame_count);
-    } else {
-        loadCaptureToHost(capture, h_buffer, info, frame_count);
     }
+//    } else {
+//        loadCaptureToHost(capture, h_buffer, info, frame_count);
+//    }
 }
 
 
@@ -249,89 +251,89 @@ void loadMovieToHost(FILE *moviefile, unsigned char *h_buffer, video_info_struct
 //	can do a direct memory copy. However if the image type is more complicated we do a much more time costly
 //	iteration over the whole image. As we deal with uchars only - can lose image fidelity!
 ///////////////////////////////////////////////////////
-void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count) {
-    nvtxRangePush(__FUNCTION__);  // Nvidia profiling option (for use in nvvp)
-
-    cv::Mat img;
-
-    for (int frame_idx = 0; frame_idx < frame_count; frame_idx++) { // iterate over frame count
-        cap >> img;  // move next video frame into image buffer
-
-        conditionAssert(!img.empty(), " openVC video frame is empty.");
-
-        int base_type = img.type() % 8;
-
-        if (img.isContinuous() && base_type == 0) {
-            // We have the simplest case that the image is a (multi-channel) uchar array in continuous memory
-            int frame_bytes = img.cols * img.rows * img.elemSize();
-            memcpy(h_buffer + frame_idx * frame_bytes, img.data, frame_bytes);
-        } else {
-            // If not simple case then we must directly iterate across image data array.
-            // Slight speed up as only need consider out image dimensions (not full frame)
-            // TODO: Not heavily tested as these video types not common.
-            int width = info.w;
-            int height = info.h;
-            int frame_elements = img.cols * img.rows;
-
-            int idx, oidx;
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-                    idx = ((img.step) / img.elemSize1()) * y
-                            + img.channels() * x;
-                    oidx = frame_idx * frame_elements + y * img.cols + x;
-
-                    switch (base_type) {// Note funky {} to allow redeclare of "data" var-name
-                    case 1:  // CV_8S
-                    {
-                        char data = img.at<char>(y, x);
-                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
-                        h_buffer[oidx] = static_cast<unsigned char>(data);
-                    }
-                        break;
-                    case 2:  // CV_16U
-                    {
-                        unsigned short data = img.at<unsigned short>(y, x);
-                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
-                        h_buffer[oidx] = static_cast<unsigned char>(data);
-                    }
-                        break;
-                    case 3:  // CV_16S
-                    {
-                        short data = img.at<short>(y, x);
-                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
-                        h_buffer[oidx] = static_cast<unsigned char>(data);
-                    }
-                        break;
-                    case 4:  // CV_32S
-                    {
-                        int data = img.at<int>(y, x);
-                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
-                        h_buffer[oidx] = static_cast<unsigned char>(data);
-                    }
-                        break;
-                    case 5:  // CV_32F
-                    {
-                        float data = img.at<float>(y, x);
-                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
-                        h_buffer[oidx] = static_cast<unsigned char>(data);
-
-                    }
-                        break;
-                    case 6:  // CV_64F
-                    {
-                        double data = img.at<double>(y, x);
-                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
-                        h_buffer[oidx] = static_cast<unsigned char>(data);
-                    }
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    nvtxRangePop();
-}
+//void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count) {
+//    nvtxRangePush(__FUNCTION__);  // Nvidia profiling option (for use in nvvp)
+//
+//    cv::Mat img;
+//
+//    for (int frame_idx = 0; frame_idx < frame_count; frame_idx++) { // iterate over frame count
+//        cap >> img;  // move next video frame into image buffer
+//
+//        conditionAssert(!img.empty(), " openVC video frame is empty.");
+//
+//        int base_type = img.type() % 8;
+//
+//        if (img.isContinuous() && base_type == 0) {
+//            // We have the simplest case that the image is a (multi-channel) uchar array in continuous memory
+//            int frame_bytes = img.cols * img.rows * img.elemSize();
+//            memcpy(h_buffer + frame_idx * frame_bytes, img.data, frame_bytes);
+//        } else {
+//            // If not simple case then we must directly iterate across image data array.
+//            // Slight speed up as only need consider out image dimensions (not full frame)
+//            // TODO: Not heavily tested as these video types not common.
+//            int width = info.w;
+//            int height = info.h;
+//            int frame_elements = img.cols * img.rows;
+//
+//            int idx, oidx;
+//            for (int y = 0; y < height; y++) {
+//                for (int x = 0; x < width; x++) {
+//                    idx = ((img.step) / img.elemSize1()) * y
+//                            + img.channels() * x;
+//                    oidx = frame_idx * frame_elements + y * img.cols + x;
+//
+//                    switch (base_type) {// Note funky {} to allow redeclare of "data" var-name
+//                    case 1:  // CV_8S
+//                    {
+//                        char data = img.at<char>(y, x);
+//                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
+//                        h_buffer[oidx] = static_cast<unsigned char>(data);
+//                    }
+//                        break;
+//                    case 2:  // CV_16U
+//                    {
+//                        unsigned short data = img.at<unsigned short>(y, x);
+//                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
+//                        h_buffer[oidx] = static_cast<unsigned char>(data);
+//                    }
+//                        break;
+//                    case 3:  // CV_16S
+//                    {
+//                        short data = img.at<short>(y, x);
+//                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
+//                        h_buffer[oidx] = static_cast<unsigned char>(data);
+//                    }
+//                        break;
+//                    case 4:  // CV_32S
+//                    {
+//                        int data = img.at<int>(y, x);
+//                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
+//                        h_buffer[oidx] = static_cast<unsigned char>(data);
+//                    }
+//                        break;
+//                    case 5:  // CV_32F
+//                    {
+//                        float data = img.at<float>(y, x);
+//                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
+//                        h_buffer[oidx] = static_cast<unsigned char>(data);
+//
+//                    }
+//                        break;
+//                    case 6:  // CV_64F
+//                    {
+//                        double data = img.at<double>(y, x);
+//                        conditionAssert(data < 256, "pixel value too large to be casted to unsigned char.");
+//                        h_buffer[oidx] = static_cast<unsigned char>(data);
+//                    }
+//                        break;
+//                    }
+//                }
+//            }
+//        }
+//    }
+//
+//    nvtxRangePop();
+//}
 
 
 

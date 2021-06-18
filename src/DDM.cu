@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#include <opencv2/opencv.hpp>
+//#include <opencv2/opencv.hpp>
 #include <string>
 #include <chrono>
 #include <algorithm>
@@ -217,12 +217,13 @@ void runDDM(std::string file_in,
             bool use_webcam,
             int webcam_idx,
             float mask_tolerance,
-            bool is_movie_file,
             int explicit_frame_rate,
             int use_frame_rate,
             int dump_accum_after,
 			bool use_explicit_frame_rate,
 			bool benchmark_mode) {
+
+    bool is_movie_file = true;
 
     auto start_time = std::chrono::high_resolution_clock::now();
     verbose("[multiDDM Begin]\n");
@@ -292,38 +293,38 @@ void runDDM(std::string file_in,
     //////////
 
     // Web-cam alignment
-    if (use_webcam) {
-        cv::VideoCapture tmp_cap(webcam_idx);
-
-        int main_scale = scale_vector[0];
-
-        while(1) {
-            cv::Mat tmp_frame;
-            tmp_cap >> tmp_frame;
-
-            for (int s = 0; s < scale_count; s++) {
-                int scale = scale_vector[s];
-                int tiles_per_side = (main_scale / scale);
-                int tiles_per_frame = tiles_per_side * tiles_per_side;
-
-                for (int t = 0; t < tiles_per_frame; t++) {
-                    cv::Rect rect(x_offset + (t / tiles_per_side) * scale + s, y_offset + (t % tiles_per_side) * scale + s, scale, scale); // add s to each to help with readability
-                    cv::rectangle(tmp_frame, rect, cv::Scalar(0, 255, 0));
-                }
-            }
-            cv::imshow( "Web-cam", tmp_frame );
-
-            char c=(char) cv::waitKey(25);
-            if(c==27)
-                break;
-        }
-        tmp_cap.release();
-        cv::destroyAllWindows();
-    }
+//    if (use_webcam) {
+//        cv::VideoCapture tmp_cap(webcam_idx);
+//
+//        int main_scale = scale_vector[0];
+//
+//        while(1) {
+//            cv::Mat tmp_frame;
+//            tmp_cap >> tmp_frame;
+//
+//            for (int s = 0; s < scale_count; s++) {
+//                int scale = scale_vector[s];
+//                int tiles_per_side = (main_scale / scale);
+//                int tiles_per_frame = tiles_per_side * tiles_per_side;
+//
+//                for (int t = 0; t < tiles_per_frame; t++) {
+//                    cv::Rect rect(x_offset + (t / tiles_per_side) * scale + s, y_offset + (t % tiles_per_side) * scale + s, scale, scale); // add s to each to help with readability
+//                    cv::rectangle(tmp_frame, rect, cv::Scalar(0, 255, 0));
+//                }
+//            }
+//            cv::imshow( "Web-cam", tmp_frame );
+//
+//            char c=(char) cv::waitKey(25);
+//            if(c==27)
+//                break;
+//        }
+//        tmp_cap.release();
+//        cv::destroyAllWindows();
+//    }
 
     video_info_struct info;
     FILE *moviefile;
-    cv::VideoCapture cap;
+//    cv::VideoCapture cap;
 
     int frame_rate;
 
@@ -339,31 +340,31 @@ void runDDM(std::string file_in,
 
         info = initFile(moviefile);
         frame_rate = explicit_frame_rate;
-
-    } else { // openCV
-        if (use_webcam) {
-            cap = cv::VideoCapture(webcam_idx);
-        } else {
-            cap = cv::VideoCapture(file_in);
-        }
-
-        conditionAssert(cap.isOpened(), "error opening video file with openCV", true);
-
-        info.w = cap.get(cv::CAP_PROP_FRAME_WIDTH);
-        info.h = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-        frame_rate = cap.get(cv::CAP_PROP_FPS);
-
-        cv::Mat test_img;
-        cap >> test_img;
-
-        // Due to the difficulty in dealing with many image types, we only
-        // deal with multi-channel data if image is CV_8U (i.e. uchar)
-        int type = test_img.type();
-        info.bpp = (type % 8) ? 1 : test_img.channels();
-
-        if (!use_webcam)
-            cap = cv::VideoCapture(file_in); // re-open so can view first frame again
     }
+//    } else { // openCV
+//        if (use_webcam) {
+//            cap = cv::VideoCapture(webcam_idx);
+//        } else {
+//            cap = cv::VideoCapture(file_in);
+//        }
+//
+//        conditionAssert(cap.isOpened(), "error opening video file with openCV", true);
+//
+//        info.w = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+//        info.h = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+//        frame_rate = cap.get(cv::CAP_PROP_FPS);
+//
+//        cv::Mat test_img;
+//        cap >> test_img;
+//
+//        // Due to the difficulty in dealing with many image types, we only
+//        // deal with multi-channel data if image is CV_8U (i.e. uchar)
+//        int type = test_img.type();
+//        info.bpp = (type % 8) ? 1 : test_img.channels();
+//
+//        if (!use_webcam)
+//            cap = cv::VideoCapture(file_in); // re-open so can view first frame again
+//    }
 
 
     if (!use_frame_rate) {
@@ -651,8 +652,8 @@ void runDDM(std::string file_in,
 
     // Initialise CPU memory (h_ready / idle)
 
-    loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, chunk_frame_count, benchmark_mode);
-    loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_cur, info, chunk_frame_count, benchmark_mode); // puts chunk data into pinned host memory
+    loadVideoToHost(is_movie_file, moviefile, h_chunk_nxt, info, chunk_frame_count, benchmark_mode);
+    loadVideoToHost(is_movie_file, moviefile, h_chunk_cur, info, chunk_frame_count, benchmark_mode); // puts chunk data into pinned host memory
 
     gpuErrorCheck(cudaMemcpyAsync(d_idle, h_chunk_nxt, chunk_size, cudaMemcpyHostToDevice, *stream_cur));
 
@@ -675,9 +676,9 @@ void runDDM(std::string file_in,
         gpuErrorCheck(cudaStreamSynchronize(*stream_nxt));
 
         if (total_chunks - chunk_index > 2) {
-            loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, chunk_frame_count, benchmark_mode);
+            loadVideoToHost(is_movie_file, moviefile, h_chunk_nxt, info, chunk_frame_count, benchmark_mode);
         } else if (leftover_frames != 0 && total_chunks - chunk_index == 2) {
-            loadVideoToHost(is_movie_file, moviefile, cap, h_chunk_nxt, info, leftover_frames, benchmark_mode);
+            loadVideoToHost(is_movie_file, moviefile, h_chunk_nxt, info, leftover_frames, benchmark_mode);
         }
 
         //// Pointer swap

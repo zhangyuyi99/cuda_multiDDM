@@ -5,7 +5,7 @@
 #include <string>
 #include <fstream>
 
-#include <opencv2/opencv.hpp>
+//#include <opencv2/opencv.hpp>
 
 #ifndef _VIDEO_READER_H_
 #define _VIDEO_READER_H_
@@ -22,8 +22,8 @@ struct video_info_struct {
 };
 
 void loadMovieToHost(FILE *mv, unsigned char *h_buff, video_info_struct vid_info, int frame_count);
-void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count);
-void loadVideoToHost(bool is_movie_file, FILE *mv, cv::VideoCapture cap, unsigned char *h_buff, video_info_struct info, int frame_count, bool benchmark_mode);
+//void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count);
+void loadVideoToHost(bool is_movie_file, FILE *mv, unsigned char *h_buff, video_info_struct info, int frame_count, bool benchmark_mode);
 
 video_info_struct initFile(FILE *moviefile);
 
