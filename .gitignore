@@ -1,5 +1,9 @@
 .*
 
+# Debug dirs
+/Debug/
+*/out/
+
 # Video files
 *.mp4
 *.movie
@@ -36,4 +40,4 @@
 *.exe
 *.out
 *.app
-/Debug/
+

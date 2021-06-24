@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <string>
 #include <iostream>
@@ -15,17 +16,18 @@ struct DDMparams {
 	std::string		s_file_name;	// file-path for scale-vector
 
 	int    frame_count;				// number of frames to analyse
+	int    frame_offset     = 0;    // number of frames to skip at start
 	int    x_off 			= 0;    // number of pixels to offset x=0 by in frame
 	int    y_off 			= 0;	// number of pixels to offset y=0 by in frame
 	int    chunk_length		= 30;   // number of frames in frame buffer
 	int    rolling_purge	= 0;    // purge and analyse accumulators after number of frames
 
-	bool   use_frame_rate	= true;
 	bool   use_webcam 		= false;
-	bool   use_movie_file	= false;
-	int	   frame_rate		= 1;
-	bool   explicit_fps		= false;
 	int    webcam_idx 		= 0;
+	bool   use_movie_file	= false;
+	bool   use_index_fps 	= false; // if flag set to false, use frame-indcies not frame-rate
+	bool   use_explicit_fps = false;
+	float  explicit_fps 	= 1.0;
 	bool   multi_stream 	= true;
 	float  q_tolerence		= 1.2;
 	bool   benchmark_mode 	= false;
@@ -34,21 +36,26 @@ struct DDMparams {
 // forward declare main DDM function
 void runDDM(std::string file_in,
             std::string file_out,
-			int *tau_arr, 	int tau_count,
-			float *lambda_arr,	int lambda_count,
-			int *scale_arr, int scale_count,
-			int x_off,		int y_off,
-			int total_frames,
+			int *tau_arr,
+			int tau_count,
+			float *lambda_arr,
+			int lambda_count,
+			int *scale_arr,
+			int scale_count,
+			int x_off,
+			int y_off,
+			int frame_count,
+			int frame_offset,
 			int chunk_frame_count,
 			bool multistream,
 			bool use_webcam,
 			int webcam_idx,
 			float q_tolerance,
-			bool is_movie_file,
-			int frame_rate,
-			int use_frame_rate,
+			bool use_movie_file,
+			bool use_index_fps,
+			bool use_explicit_fps,
+			float explicit_fps,
 			int dump_accum_after,
-			bool use_explicit_frame_rate,
 			bool benchmark_mode);
 
 
@@ -59,7 +66,7 @@ void printHelp() {
 			"  Usage ./ddm [OPTION]..\n"
 			"  -h           Print out this help.\n"
 			"   REQUIRED ARGS\n"
-			"  -o PATH      Output filepath.\n"
+			"  -o PATH      Output file-path.\n"
 			"  -N INT       Number of frames to analyse.\n"
 			"  -Q PATH      Specify path to lambda-value file (line separated).\n"
 			"  -T PATH 		Specify path to tau-value file (line separated). \n"
@@ -71,15 +78,16 @@ void printHelp() {
     		"  -B 			Benchmark mode, will perform analysis on random data.\n"
 
 			"   OPTIONAL ARGS\n"
-			"  -x OFFSET        Set x-offset (default 0).\n"
-			"  -y OFFSET        Set y-offset (default 0).\n"
-			"  -I           	Use frame indices for tau-labels not real time.\n"
+    		"  -s OFFSET	Set first frame offset (default 0).\n"
+			"  -x OFFSET    Set x-offset (default 0).\n"
+			"  -y OFFSET    Set y-offset (default 0).\n"
+			"  -I           Use frame indices for tau-labels not real time.\n"
 			"  -v			Verbose mode on.\n"
 			"  -Z           Turn off multi-steam (smaller memory footprint - slower execution time).\n"
 			"  -t INT       Set the q-vector mask tolerance - percent (integer only) (default 20 i.e. radial mask (1 - 1.2) * q).\n"
 			"  -C INT	    Set main chunk frame count, a buffer 3x chunk frame count will be allocated in memory (default 30 frames).\n"
-			"  -G SIZE          Sub-divide analysis, buffer will be output and purged every SIZE chunks\n"
-    		"  -M FPS		Must be used if using movie-file file format. Argument to set frame-rate of movie-file.\n"
+			"  -G SIZE      Sub-divide analysis, buffer will be output and purged every SIZE chunks\n"
+    		"  -M			Set if using movie-file format.\n"
     		"  -F FPS 		Force the analysis to assume a specific frame-rate, over-rides other options.");
 }
 
@@ -95,7 +103,7 @@ int main(int argc, char **argv) {
     bool movie_file = false;
 
     for (;;) {
-        switch (getopt(argc, argv, "ho:N:x:y:Q:T:S:If:W::vZt:C:M:G:F:B")) {
+        switch (getopt(argc, argv, "ho:N:s:x:y:Q:T:S:If:W::vZt:C:MG:F:B")) {
             case '?':
             case 'h':
                 printHelp();
@@ -130,34 +138,38 @@ int main(int argc, char **argv) {
                  continue;
 
              case 'I':
-                 params.use_frame_rate = false;
+                 params.use_index_fps = true;
                  continue;
+
+             case 's':
+            	 params.frame_offset = atoi(optarg);
+            	 continue;
 
             case 'f':
             	{
-					conditionAssert(!input_specified, "Cannot use both in-filepath and web-cam option at same time.", true);
+				conditionAssert(!input_specified, "Cannot use both in-filepath and web-cam option at same time.", true);
 
-					params.file_in = optarg;
-					input_specified = true;
+				params.file_in = optarg;
+				input_specified = true;
             	}
                 continue;
 
             case 'W':
             	{
-					conditionAssert(!input_specified, "Cannot use both in-filepath and web-cam option at same time.", true);
+				conditionAssert(!input_specified, "Cannot use both in-filepath and web-cam option at same time.", true);
 
-					params.use_webcam = true;
-					if (optarg != NULL) {
-						params.webcam_idx = atoi(optarg);
-					}
-					input_specified = true;
+				params.use_webcam = true;
+				if (optarg != NULL) {
+					params.webcam_idx = atoi(optarg);
+				}
+				input_specified = true;
             	}
                 continue;
 
             case 'B':
             	{
-                    params.benchmark_mode = true;
-					input_specified = true;
+                params.benchmark_mode = true;
+				input_specified = true;
             	}
                 continue;
 
@@ -171,8 +183,8 @@ int main(int argc, char **argv) {
 
             case 't':
             	{
-            		int tmp = atoi(optarg);
-            		params.q_tolerence = 1.0 + (tmp / 100.0);
+            	int tmp = atoi(optarg);
+            	params.q_tolerence = 1.0 + (tmp / 100.0);
             	}
             	continue;
 
@@ -181,10 +193,7 @@ int main(int argc, char **argv) {
                 continue;
 
             case 'M':
-            	{
-					params.use_movie_file = true;
-					params.frame_rate = atoi(optarg);
-            	}
+				params.use_movie_file = true;
                 continue;
 
             case 'G':
@@ -194,11 +203,9 @@ int main(int argc, char **argv) {
             case 'F':
             	{
                 params.explicit_fps = true;
-                params.frame_rate = atoi(optarg);
+                params.explicit_fps = strtof(optarg, NULL);
             	}
                 continue;
-
-
         }
         break;
     }
@@ -274,6 +281,7 @@ int main(int argc, char **argv) {
         idx++;
     }
 
+
     runDDM(params.file_in,
     	   params.file_out,
 		   tau_arr,
@@ -285,16 +293,17 @@ int main(int argc, char **argv) {
 		   params.x_off,
 		   params.y_off,
 		   params.frame_count,
+		   params.frame_offset,
 		   params.chunk_length,
 		   params.multi_stream,
 		   params.use_webcam,
 		   params.webcam_idx,
 		   params.q_tolerence,
 		   params.use_movie_file,
-		   params.frame_rate,
-		   params.frame_rate,
-		   params.rolling_purge,
+		   params.use_index_fps,
+		   params.use_explicit_fps,
 		   params.explicit_fps,
+		   params.rolling_purge,
 		   params.benchmark_mode);
 
     printf("DDM End\n");

@@ -30,6 +30,6 @@ void writeIqtToFile(std::string filename,
 					float *ISF,
 					float *lambda_arr, int lamda_count,
 					int   *tau_arr,	   int tau_count,
-					int fps);
+					float fps);
 
 #endif

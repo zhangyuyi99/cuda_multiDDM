@@ -61,7 +61,7 @@ void loadVideoToHost(bool is_movie_file, FILE *moviefile, cv::VideoCapture captu
 //  Generic header information is first extracted, followed by specific
 //  camera data.
 ///////////////////////////////////////////////////////
-video_info_struct initFile(FILE *moviefile) {
+video_info_struct initFile(FILE *moviefile, int frame_offset) {
     // Locate start of header using magic value
     long magic_offset = 0;
     bool found = false;
@@ -109,66 +109,107 @@ video_info_struct initFile(FILE *moviefile) {
 
     // Extract camera specific frame information
     uint32_t size_x, size_y;
+    uint64_t time_zero, time_one; // Timestamp in micro-seconds
 
     switch (camera_frame.type) {
-    case CAMERA_TYPE_IIDC:
-    	{
-			struct iidc_save_struct iidc_frame;
+		case CAMERA_TYPE_IIDC:
+			{
+				struct iidc_save_struct iidc_frame;
 
-			if (fread(&iidc_frame, IIDC_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
-				fprintf(stderr,
-						"[.moviefile Initialise Error] Corrupted header at offset %lu\n",
-						ftell(moviefile));
-				exit(EXIT_FAILURE);
+				if (fread(&iidc_frame, IIDC_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+					fprintf(stderr, "[Movie-file Init Error] Corrupted header at offset %lu\n", ftell(moviefile));
+					exit(EXIT_FAILURE);
+				}
+
+				size_x = iidc_frame.i_size_x;
+				size_y = iidc_frame.i_size_y;
+				time_zero = iidc_frame.i_timestamp;
+
+				// Read second frame to calculate frame-rate
+
+				fseek(moviefile, camera_frame.length_data, SEEK_CUR);
+
+				if (fread(&iidc_frame, IIDC_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+					fprintf(stderr, "[Movie-file Init. Error] Corrupted header at offset %lu\n", ftell(moviefile));
+					exit(EXIT_FAILURE);
+				}
+
+				time_one = iidc_frame.i_timestamp;
+
+				int bytes_read = 2 * IIDC_MOVIE_HEADER_LENGTH + camera_frame.length_data;
+				int offset = frame_offset * (IIDC_MOVIE_HEADER_LENGTH + camera_frame.length_data);
+
+				fseek(moviefile, -bytes_read, SEEK_CUR);
+				fseek(moviefile, +offset, SEEK_CUR);
 			}
-			size_x = iidc_frame.i_size_x;
-			size_y = iidc_frame.i_size_y;
+			break;
 
-			fseek(moviefile, -IIDC_MOVIE_HEADER_LENGTH, SEEK_CUR);
-    	}
-        break;
+		case CAMERA_TYPE_ANDOR:
+			{
+				struct andor_save_struct andor_frame;
 
-    case CAMERA_TYPE_ANDOR:
-    	{
-			struct andor_save_struct andor_frame;
+				if (fread(&andor_frame, ANDOR_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+					fprintf(stderr, "[Movie-file Init. Error] Corrupted header at offset %lu\n", ftell(moviefile));
+					exit(EXIT_FAILURE);
+				}
 
-			if (fread(&andor_frame, ANDOR_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
-				fprintf(stderr,
-						"[.moviefile Initialise Error] Corrupted header at offset %lu\n",
-						ftell(moviefile));
-				exit(EXIT_FAILURE);
+				size_x = (andor_frame.a_x_end - andor_frame.a_x_start + 1) / andor_frame.a_x_bin;
+				size_y = (andor_frame.a_y_end - andor_frame.a_y_start + 1) / andor_frame.a_y_bin;
+				time_zero = andor_frame.a_timestamp_sec;
+
+				fseek(moviefile, camera_frame.length_data, SEEK_CUR);
+
+				if (fread(&andor_frame, ANDOR_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+					fprintf(stderr, "[Movie-file Init. Error] Corrupted header at offset %lu\n", ftell(moviefile));
+					exit(EXIT_FAILURE);
+				}
+
+				time_one = andor_frame.a_timestamp_sec;
+
+				int bytes_read = 2 * ANDOR_MOVIE_HEADER_LENGTH + camera_frame.length_data;
+				int offset = frame_offset * (ANDOR_MOVIE_HEADER_LENGTH + camera_frame.length_data);
+
+				fseek(moviefile, -bytes_read, SEEK_CUR);
+				fseek(moviefile, +offset, SEEK_CUR);
 			}
-			size_x = (andor_frame.a_x_end - andor_frame.a_x_start + 1)
-					/ andor_frame.a_x_bin;
-			size_y = (andor_frame.a_y_end - andor_frame.a_y_start + 1)
-					/ andor_frame.a_y_bin;
+			break;
 
-			fseek(moviefile, -ANDOR_MOVIE_HEADER_LENGTH, SEEK_CUR);
-    	}
-        break;
+		case CAMERA_TYPE_XIMEA:
+			{
+				struct ximea_save_struct ximea_frame;
 
-    case CAMERA_TYPE_XIMEA:
-    	{
-			struct ximea_save_struct ximea_frame;
+				if (fread(&ximea_frame, XIMEA_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+					fprintf(stderr, "[Movie-file Init. Error] Corrupted header at offset %lu\n", ftell(moviefile));
+					exit(EXIT_FAILURE);
+				}
 
-			if (fread(&ximea_frame, XIMEA_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
-				fprintf(stderr,
-						"[.moviefile Initialise Error] Corrupted header at offset %lu\n",
-						ftell(moviefile));
-				exit(EXIT_FAILURE);
+				size_x = ximea_frame.x_size_x;
+				size_y = ximea_frame.x_size_y;
+				time_zero = ximea_frame.x_timestamp_sec;
+
+				fseek(moviefile, camera_frame.length_data, SEEK_CUR);
+
+				if (fread(&ximea_frame, XIMEA_MOVIE_HEADER_LENGTH, 1, moviefile) != 1) {
+					fprintf(stderr, "[Movie-file Init. Error] Corrupted header at offset %lu\n", ftell(moviefile));
+					exit(EXIT_FAILURE);
+				}
+
+				time_one = ximea_frame.x_timestamp_sec;
+
+				int bytes_read = 2 * XIMEA_MOVIE_HEADER_LENGTH + camera_frame.length_data;
+				int offset = frame_offset * (XIMEA_MOVIE_HEADER_LENGTH + camera_frame.length_data);
+
+				fseek(moviefile, -bytes_read, SEEK_CUR);
+				fseek(moviefile, +offset, SEEK_CUR);
 			}
-			size_x = ximea_frame.x_size_x;
-			size_y = ximea_frame.x_size_y;
-
-			fseek(moviefile, -XIMEA_MOVIE_HEADER_LENGTH, SEEK_CUR);
-    	}
         break;
 
     default:
-        fprintf(stderr, "[.moviefile Initialise Error] Unsupported camera.\n");
-        exit( EXIT_FAILURE);
+        fprintf(stderr, "[Movie-file Init. Error] Unsupported camera type.\n");
+        exit(EXIT_FAILURE);
         break;
     }
+
 
     video_info_struct out;
     out.w = static_cast<int>(size_x);
@@ -176,6 +217,9 @@ video_info_struct initFile(FILE *moviefile) {
     out.type = camera_frame.type;
     out.length = camera_frame.length_data;
     out.bpp = (camera_frame.pixelmode == CAMERA_PIXELMODE_MONO_8) ? 1 : 2;
+
+    uint64_t frame_time = time_one - time_zero; // frame time (microseconds)
+    out.fps = 1.0e6 / static_cast<float>(frame_time);
 
     return out;
 }

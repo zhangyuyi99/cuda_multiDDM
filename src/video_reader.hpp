@@ -17,6 +17,7 @@ struct video_info_struct {
     int x_off = 0;
     int y_off = 0;
     int bpp; 			// Bytes-per-pixel
+    float fps = 1.0;
     uint32_t type; 		// Camera type
     uint32_t length;	// Total length of data in bytes
 };
@@ -25,7 +26,7 @@ void loadMovieToHost(FILE *mv, unsigned char *h_buff, video_info_struct vid_info
 void loadCaptureToHost(cv::VideoCapture cap, unsigned char *h_buffer, video_info_struct info, int frame_count);
 void loadVideoToHost(bool is_movie_file, FILE *mv, cv::VideoCapture cap, unsigned char *h_buff, video_info_struct info, int frame_count, bool benchmark_mode);
 
-video_info_struct initFile(FILE *moviefile);
+video_info_struct initFile(FILE *moviefile, int frame_offset);
 
 // Common camera frame struct
 struct camera_save_struct {

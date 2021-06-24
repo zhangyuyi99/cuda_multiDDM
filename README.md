@@ -20,6 +20,7 @@ Requires CUDA, OpenCV
   -B          Benchmark mode, will perform analysis on random data.
 
    OPTIONAL ARGS
+  -s OFFSET	Set first frame offset (default 0).
   -x OFFSET   Set x-offset (default 0).
   -y OFFSET   Set y-offset (default 0).
   -I          Use frame indices for tau-labels not real time.
@@ -28,6 +29,6 @@ Requires CUDA, OpenCV
   -t INT      Set the q-vector mask tolerance - percent (integer only) (default 20 i.e. radial mask (1 - 1.2) * q).
   -C INT      Set main chunk frame count, a buffer 3x chunk frame count will be allocated in memory (default 30 frames).
   -G SIZE     Sub-divide analysis, buffer will be output and purged every SIZE chunks.
-  -M FPS      Must be used if using movie-file file format. Argument to set frame-rate of movie-file.
+  -M			Set if using movie-file format.
   -F FPS      Force the analysis to assume a specific frame-rate, over-rides other options.
 ```

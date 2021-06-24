@@ -1,1 +1,1 @@
-python3 ../python_tools/plot_grid.py --root ./out/out --scales 1024 512 256 --tiles 1 4 16 --umpx 0.09700
+python3 ../python_tools/plot_averaged.py --root ./out/out --scales 1024 512 256 --tiles 1 4 16 --umpx 0.09700

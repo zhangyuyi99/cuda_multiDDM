@@ -30,7 +30,7 @@ void writeIqtToFile(std::string filename,
 					float *ISF,
 					float *lambda_arr, int lamda_count,
 					int   *tau_arr,	   int tau_count,
-					int fps) {
+					float fps) {
 
     std::ofstream out_file(filename); // attempt to open file
 
@@ -44,7 +44,7 @@ void writeIqtToFile(std::string filename,
 
     	// tau - values
     	for (int ti = 0; ti < tau_count; ti++) {
-    		out_file << static_cast<float>(tau_arr[ti]) / static_cast<float>(fps) << " ";
+    		out_file << static_cast<float>(tau_arr[ti]) / fps << " ";
     	}
 
     	out_file << "\n";
