@@ -92,9 +92,14 @@ def fit_ISF(ISF, q_vector, tau_vector):
 def plot_diff_coeff(ax, q_vector, params, errs):
 
     params = np.array(params)
+    
+    print(params)
+    print(errs)
 
     Fs = params[:, 0]
     Fs_err = errs[:, 0]
+    # Fs = params[:]
+    # Fs_err = errs[:]
 
     # F must be greator than zero
     Fs_tmp = []
@@ -274,10 +279,11 @@ if __name__ == "__main__":
         # Fit ISF with exponentials [Params (F, A, B)]
 
         # Find diff coeff and plot graph
-        plot_diff_coeff(ax_D, q_vector, params, params_err)
+        # plot_diff_coeff(ax_D, q_vector, params, params_err)
 
     print(f"Time elapsed: {time.time() - start_time} seconds")
 
     plt.subplots_adjust(hspace=0.3, wspace=0.3)
+    plt.savefig('/u/homes/yz655/net/cicutagroup/yz655/cuda_run_plot/0050/')
     plt.show()
     

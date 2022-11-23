@@ -142,6 +142,7 @@ float * analyseFFTHost(float *d_data_in,
 //	based on given input parameters. Masks are built on
 //	host and copied to given device memory location.
 ///////////////////////////////////////////////////////
+// buildAzimuthMask(d_masks, h_pixel_counts, q_pixel_radius, lambda_count, mask_tolerance, scale, scale);
 void buildAzimuthMask(bool *d_mask_out,
 					  int *h_pixel_counts,
 					  float *q_arr, int q_count,
@@ -165,13 +166,13 @@ void buildAzimuthMask(bool *d_mask_out,
 
 	bool px;
 	for (int q_idx = 0; q_idx < q_count; q_idx++) {
-		h_pixel_counts[q_idx] = 0;
+		h_pixel_counts[q_idx] = 0;  // TODO: h_pixel_counts[(s-1)*q_count+q_idx] = 0;
 
 		for (int x = 0; x < (w/2 + 1); x++) {
 			for (int y = 0; y < h; y++) {
 				// manual FFT shift
 				x_shift = (x + half_w) % w;
-				y_shift = (y + half_h) % h;
+				y_shift = (y + half_h) % h;  // TODO: why manual shift?
 
 				// distance from centre
 				x_shift -= half_w;
@@ -182,7 +183,7 @@ void buildAzimuthMask(bool *d_mask_out,
 
 				// element true if r in range [1.0 q, q_tolerance * q]
 				px = (1 <= r2q2_ratio) && (r2q2_ratio <= tol2);
-                if (px) h_pixel_counts[q_idx] += 1;
+                if (px) h_pixel_counts[q_idx] += 1; // TODO: h_pixel_counts[(s-1)*q_count+q_idx] = 0;
                 h_mask[q_idx * element_count + y * (w/2 + 1) + x] = px;
 			}
 		}

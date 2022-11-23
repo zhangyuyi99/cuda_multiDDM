@@ -96,7 +96,11 @@ void analyse_accums(int *scale_arr,	int scale_count,
 
 		for (int i = 0; i < lambda_count; i++) {
 			q_pixel_radius[i] = static_cast<float>(scale) / (lambda_arr[i]); // key conversion between pixel movement and q radius
+            // verbose("lambda_arr[%d]: %f\n", i, lambda_arr[i]);
+            // verbose("q_pixel_radius[%d]: %f\n", i, q_pixel_radius[i]);
 		}
+
+        
 
 		// Old format of the q-vectors assumed relative to largest scale
 //        for (int i = 0; i < lambda_count; i++) {
@@ -358,7 +362,17 @@ void runDDM(std::string file_in,
         // Due to the difficulty in dealing with many image types, we only
         // deal with multi-channel data if image is CV_8U (i.e. uchar)
         int type = test_img.type();
+        // decide if type is CV_8U. If so, (type % 8) = 0, bpp = channels; otherwise bpp = 0.
         info.bpp = (type % 8) ? 1 : test_img.channels();
+        // info.bpp = 1;
+
+        verbose("[test_img.depth - %d ]\n", test_img.depth());
+        verbose("[test_img.type - %d ]\n", type);
+        verbose("[test_img.channels - %d ]\n", test_img.channels());
+        verbose("[bpp calculation - %d bytes per pixel]\n", info.bpp);
+
+        // info.bpp = 8;
+        verbose("[bpp after set - %d bytes per pixel]\n", info.bpp);
 
         if (!use_webcam)
             cap = cv::VideoCapture(file_in); // re-open so can view first frame again
@@ -401,8 +415,8 @@ void runDDM(std::string file_in,
     const int main_scale = scale_vector[0];
     int chunks_already_parsed = 0;
 
-    verbose("[Video info - (%d x %d), %d Frames (offset %d), %.4f FPS]\n", info.w, info.h, total_frames, frame_offset, info.fps);
-
+    verbose("[Video info - (%d x %d), %d Frames (offset %d), %.4f FPS, %d bytes per pixel]\n", info.w, info.h, total_frames, frame_offset, info.fps, info.bpp);
+    verbose("[bpp in Video info - %d bytes per pixel]\n", info.bpp);
     // streams
 
     cudaStream_t stream_1, stream_2;
@@ -423,9 +437,13 @@ void runDDM(std::string file_in,
     size_t total_host_memory   = 0;
     size_t total_device_memory = 0;
 
-    // main device buffer
-    size_t buffer_size  = sizeof(unsigned char) * buffer_frame_count * info.bpp * info.w * info.h;
+    verbose("[bpp in buffer - %d bytes per pixel]\n", info.bpp);
 
+    // info.bpp = 1;
+
+    // main device buffer, allocate memory in bytes
+    size_t buffer_size  = sizeof(unsigned char) * buffer_frame_count * info.bpp * info.w * info.h;
+    verbose("[buffer_size - %d bytes]\n", buffer_size);
     unsigned char *d_buffer;
     gpuErrorCheck(cudaMalloc((void** )&d_buffer, buffer_size));
 
@@ -533,11 +551,13 @@ void runDDM(std::string file_in,
     verbose("Memory allocation finished. "
             "Total memory allocated\n"
             "Device:\n\tExplictly allocated:\t %f GB \n\tTotal allocated:\t %f GP\n\tFree memory remaining:\t %f GB\n"
-            "Host:\t %f GB\n",
+            "Host:\t %f GB\n"
+            "info.bpp:\t %d\n",
             total_device_memory          / (float) 1073741824,
             (total_memory - free_memory) / (float) 1073741824,
             free_memory                  / (float) 1073741824,
-            total_host_memory            / (float) 1073741824);
+            total_host_memory            / (float) 1073741824),
+            info.bpp;
 
 
     // tau-vector
@@ -657,13 +677,14 @@ void runDDM(std::string file_in,
 
     loadVideoToHost(use_moviefile, moviefile, cap, h_chunk_nxt, info, chunk_frame_count, benchmark_mode);
     loadVideoToHost(use_moviefile, moviefile, cap, h_chunk_cur, info, chunk_frame_count, benchmark_mode); // puts chunk data into pinned host memory
-
+    verbose("Video loaded to host\n");
     gpuErrorCheck(cudaMemcpyAsync(d_idle, h_chunk_nxt, chunk_size, cudaMemcpyHostToDevice, *stream_cur));
-
+    verbose("GPU error check\n");
+    
     parseChunk(d_idle, d_start_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur);
 
     gpuErrorCheck(cudaStreamSynchronize(*stream_cur));
-
+    verbose("Parse chunk\n");
 
     for (int chunk_index = 0; chunk_index < total_chunks; chunk_index++) {
 
@@ -709,6 +730,9 @@ void runDDM(std::string file_in,
 
             std::string tmp_name = file_out + "_t" + std::to_string(chunks_already_parsed / dump_accum_after) + "_";
 
+            // d_accum_list_cur should be the non-averaged FFT result 
+
+            // analyse_accums() average the FFT result 
             analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, tmp_frame_count, mask_tolerance, tmp_name, d_accum_list_cur, info.fps);
 
             verbose("[Purging Accumulator]\n");

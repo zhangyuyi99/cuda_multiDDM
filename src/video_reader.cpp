@@ -231,10 +231,12 @@ video_info_struct initFile(FILE *moviefile, int frame_offset) {
 //  unexpected than repeat slow file manipulation from initialise phase.
 ///////////////////////////////////////////////////////
 void loadMovieToHost(FILE *moviefile, unsigned char *h_buffer, video_info_struct info, int frame_count) {
+    printf("Nvidia profiling start");
     nvtxRangePush(__FUNCTION__); // Nvidia profiling option (for use in nvvp)
 
     int frame_index = 0;
 
+    printf("Video reader info.bpp: %d",info.bpp);
     while (frame_index < frame_count) {
         // Read header
         switch (info.type) {
@@ -280,6 +282,10 @@ void loadMovieToHost(FILE *moviefile, unsigned char *h_buffer, video_info_struct
         }
         frame_index++;
     }
+
+    printf("Video reader info.bpp: %d",info.bpp);
+    // printf("Video reader h_current: %d",*h_current);
+
     nvtxRangePop();
 }
 
