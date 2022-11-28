@@ -62,6 +62,7 @@ inline void combineAccumulators(float **d_accum_list_A,
     }
 }
 
+// analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, frames_left, mask_tolerance, file_out, d_accum_list_cur, info.fps);
 
 ///////////////////////////////////////////////////////
 //	This function handles analysis of the I(q, tau)
@@ -128,6 +129,7 @@ void analyse_accums(int *scale_arr,	int scale_count,
 //  This function handles the parsing of on-device raw (uchar) data into a float
 //  array, and the multi-scale FFT of this data to a list of cufftComplex arrays.
 ////////////////////////////////////////////////////////////////////////////////
+// parseChunk(d_ready, d_end_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur);
 void parseChunk(unsigned char *d_raw_in,
                 cufftComplex **d_fft_list_out,
                 float *d_workspace,
@@ -149,6 +151,7 @@ void parseChunk(unsigned char *d_raw_in,
     for (int s = 0; s < scale_count; s++) {
         int scale = scale_arr[s];
 
+        // mykernel<<<blocks, threads, shared_mem, stream>>>(args);
         parseBufferScalePow2<<<gridDim, blockDim, 0, stream>>>(d_raw_in, d_workspace, info.bpp, 0, info.w, info.h, info.x_off, info.y_off, scale, main_scale, frame_count);
         cufftSetStream(fft_plan_list[s], stream);
 
@@ -162,6 +165,7 @@ void parseChunk(unsigned char *d_raw_in,
 //  This function handles the analysis of the FFT, i.e. handles the calculation
 //  of the difference functions. Makes use of 3-section circular buffer - see project
 ////////////////////////////////////////////////////////////////////////////////
+// analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, leftover_frames, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
 void analyseChunk(cufftComplex **d_fft_buffer1,
                   cufftComplex **d_fft_buffer2,
                   float **d_fft_accum_list,
@@ -269,7 +273,6 @@ void runDDM(std::string file_in,
     verbose("Scale list:\n");
     for (int s = 0; s < scale_count; s++) {
         unsigned int scale = scale_vector[s];
-        printf("\t%d\n", scale);
         conditionAssert(!(scale == 0) && !(scale & (scale - 1)), "scales must be powers of two (> 0)", true);
 
         if (s < scale_count - 1)
@@ -416,7 +419,6 @@ void runDDM(std::string file_in,
     int chunks_already_parsed = 0;
 
     verbose("[Video info - (%d x %d), %d Frames (offset %d), %.4f FPS, %d bytes per pixel]\n", info.w, info.h, total_frames, frame_offset, info.fps, info.bpp);
-    verbose("[bpp in Video info - %d bytes per pixel]\n", info.bpp);
     // streams
 
     cudaStream_t stream_1, stream_2;
@@ -437,9 +439,6 @@ void runDDM(std::string file_in,
     size_t total_host_memory   = 0;
     size_t total_device_memory = 0;
 
-    verbose("[bpp in buffer - %d bytes per pixel]\n", info.bpp);
-
-    // info.bpp = 1;
 
     // main device buffer, allocate memory in bytes
     size_t buffer_size  = sizeof(unsigned char) * buffer_frame_count * info.bpp * info.w * info.h;
@@ -718,6 +717,7 @@ void runDDM(std::string file_in,
         // End of iteration
         verbose("[Chunk complete (%d \\ %d)]\n", chunk_index + 1, total_chunks);
 
+        // dump_accum_after = 0 by default
         if (dump_accum_after != 0 && chunk_index != 0 && chunk_index % dump_accum_after == 0) {
             verbose("[Parsing Accumulator]\n");
 
@@ -785,7 +785,7 @@ void runDDM(std::string file_in,
 
     //////////
     ///  Analysis
-    //////////
+    //////////analyseChunk
     verbose("Analysis.\n");
 
     int frames_left = total_frames - chunks_already_parsed * chunk_frame_count;

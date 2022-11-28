@@ -81,6 +81,7 @@ __global__ void parseBufferScalePow2(const unsigned char* __restrict__ d_buffer,
 ///////////////////////////////////////////////////////
 // GPU function to add the absolute magnitude of FFT to accumulator array
 ///////////////////////////////////////////////////////
+// processFFT<<<gridDim, blockDim, 0, stream>>>(d_fft_buffer1[s] + frame_size * frame_offset, tmp, accum_out, fft_norm, frame_size);
 __global__ void processFFT(const cufftComplex* __restrict__ d_dataA,
                            const cufftComplex* __restrict__ d_dataB,
                            float * __restrict__ d_odata,
