@@ -76,7 +76,9 @@ void analyse_accums(int *scale_arr,	int scale_count,
 					float mask_tolerance,
 		            std::string file_out,
 		            float **accum_list,
-		            int framerate) {
+		            int framerate,
+                    float *h_accum_tmp,
+                    size_t ISF_size) {
 
 	int main_scale = scale_arr[0]; // the largest length-scale
 
@@ -114,7 +116,16 @@ void analyse_accums(int *scale_arr,	int scale_count,
 
             std::string tmp_filename = file_out + std::to_string(scale) + "-" + std::to_string(tile_idx); //output filenames in the style ./<filename><scale>-<tile idx>
 
-            float *d_accum_tmp = accum_list[s] + tile_size * tile_idx;
+            std::string tmp_filename_nonAve = file_out + std::to_string(scale) + "-" + std::to_string(tile_idx) + "-" + "nonAve"; //output filenames in the style ./<filename><scale>-<tile idx>-nonAve
+
+            float *d_accum_tmp = accum_list[s] + tile_size * tile_idx * tau_count;
+
+            // copy non-averaged result from device to host
+			gpuErrorCheck(cudaMemcpy(h_accum_tmp, d_accum_tmp, tile_size * tau_count * sizeof(float), cudaMemcpyDeviceToHost));
+
+            writeNonAveIqtToFile(tmp_filename_nonAve, h_accum_tmp, lambda_arr, lambda_count, tau_arr, tau_count, framerate, tile_size);
+
+            gpuErrorCheck(cudaMemset(h_accum_tmp, 0, ISF_size));
 
             float *ISF = analyseFFTDevice(d_accum_tmp, d_masks, h_pixel_counts, normalisation, tau_count, lambda_count, tile_count, scale, scale);
 
@@ -235,7 +246,8 @@ void runDDM(std::string file_in,
 			bool use_explicit_fps,
 			float explicit_fps,
             int dump_accum_after,
-			bool benchmark_mode) {
+			bool benchmark_mode,
+            bool nonAveOutput) {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     verbose("[multiDDM Begin]\n");
@@ -472,6 +484,16 @@ void runDDM(std::string file_in,
     		h_chunk_2[i] = static_cast<unsigned char>(rand() % 255);
     	}
     }
+
+    // host memory for non-averaged ISF output, TODO
+    float *h_accum_tmp;
+
+    size_t ISF_size = sizeof(float) * main_scale * main_scale * tau_count;
+
+    if (nonAveOutput) {
+        gpuErrorCheck(cudaHostAlloc((void **) &h_accum_tmp, ISF_size, cudaHostAllocDefault));
+    }
+
     // work space (multi-stream)
     size_t workspace_size = sizeof(float) * chunk_frame_count * main_scale * main_scale;
 
@@ -732,8 +754,21 @@ void runDDM(std::string file_in,
 
             // d_accum_list_cur should be the non-averaged FFT result 
 
+                // for (int s = 0; s < scale_count; s++) {
+                //     int scale = scale_vector[s];
+                //     int tiles_per_frame = (main_scale / scale) * (main_scale / scale);
+                //     accum_size += sizeof(float) * (scale / 2 + 1) * scale * tiles_per_frame * tau_count;
+                // }
+
+                // float *d_accum_1;
+                // float *d_accum_2;
+
+                // if (multistream) {
+                //     gpuErrorCheck(cudaMalloc((void** ) &d_accum_1, accum_size));
+
+
             // analyse_accums() average the FFT result 
-            analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, tmp_frame_count, mask_tolerance, tmp_name, d_accum_list_cur, info.fps);
+            analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, tmp_frame_count, mask_tolerance, tmp_name, d_accum_list_cur, info.fps, h_accum_tmp, ISF_size);
 
             verbose("[Purging Accumulator]\n");
 
@@ -777,6 +812,7 @@ void runDDM(std::string file_in,
     cudaFree(d_fft_buffer);
     cudaFree(d_workspace_1);
     cudaFree(d_workspace_2);
+    cudaFree(h_accum_tmp);
 
     if (multistream) {
         combineAccumulators(d_accum_list_cur, d_accum_list_nxt, scale_vector, scale_count, tau_count);
@@ -789,7 +825,7 @@ void runDDM(std::string file_in,
     verbose("Analysis.\n");
 
     int frames_left = total_frames - chunks_already_parsed * chunk_frame_count;
-    analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, frames_left, mask_tolerance, file_out, d_accum_list_cur, info.fps);
+    analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, frames_left, mask_tolerance, file_out, d_accum_list_cur, info.fps, h_accum_tmp, ISF_size);
 
     cudaDeviceSynchronize();
     cudaFree(d_accum_1);

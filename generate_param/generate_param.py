@@ -6,13 +6,13 @@ upper_tau = int(sys.argv[1])
 path = "/cicutagroup/yz655/cuda_run/"
 
 upper_scale = 10   # 2^10
-lower_scale = 5
+lower_scale = 10
 
 # upper_q = 40   # m-1
 # lower_q = 16
 # q_number = upper_q-lower_q+1
 
-upper_lambda = 32   # m-1
+upper_lambda = 16   # m-1
 lower_lamda = 1
 lambda_number = int((upper_lambda-lower_lamda)/4+1)
 
@@ -24,7 +24,7 @@ with open(path+"lambda.txt", "w") as f:
     
     lambda_list=[]
     lambda_value = 1
-    while lambda_value<=2**lower_scale:
+    while lambda_value<=2**lower_scale and lambda_value<=upper_lambda:
     # while scale>=lower_scale:
         f.write(str(lambda_value)+'\n')
         # lambda_value*=2

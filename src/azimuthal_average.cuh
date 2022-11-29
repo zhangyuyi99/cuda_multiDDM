@@ -32,4 +32,10 @@ void writeIqtToFile(std::string filename,
 					int   *tau_arr,	   int tau_count,
 					float fps);
 
+void writeNonAveIqtToFile(std::string filename,
+					float *h_accum_tmp,
+					float *lambda_arr, int lamda_count,
+					int   *tau_arr,	   int tau_count,
+					float fps, int tile_size); 
+
 #endif

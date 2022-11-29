@@ -50,8 +50,28 @@ constants.hpp
 video_reader.hpp
 /u/homes/yz655/cuda_multiDDM/src/video_reader.hpp
 
+/u/homes/yz655/cuda_multiDDM/src/azimuthal_average.cu
+string
+-
+iostream
+-
+fstream
+-
+constants.hpp
+/u/homes/yz655/cuda_multiDDM/src/constants.hpp
+debug.hpp
+/u/homes/yz655/cuda_multiDDM/src/debug.hpp
+azimuthal_average_kernel.cuh
+/u/homes/yz655/cuda_multiDDM/src/azimuthal_average_kernel.cuh
+
 /u/homes/yz655/cuda_multiDDM/src/azimuthal_average.cuh
 string
+-
+
+/u/homes/yz655/cuda_multiDDM/src/azimuthal_average_kernel.cuh
+stdio.h
+-
+cuda_runtime.h
 -
 
 /u/homes/yz655/cuda_multiDDM/src/constants.hpp

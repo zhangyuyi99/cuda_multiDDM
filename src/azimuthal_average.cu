@@ -23,20 +23,20 @@ inline unsigned int nextPow2(unsigned int x) {
 }
 
 ///////////////////////////////////////////////////////
-//	Writes ISF(lambda, tau) to file. The format of the
+//	Writes non-averaged ISF to file. The format of the
 //	output is described in detail in the documentation.
 ///////////////////////////////////////////////////////
-void writeIqtToFile(std::string filename,
-					float *ISF,
-					float *lambda_arr, int lamda_count,
+void writeNonAveIqtToFile(std::string filename,
+					float *h_accum_tmp,
+					float *lambda_arr, int lambda_count,
 					int   *tau_arr,	   int tau_count,
-					float fps) {
+					float fps, int tile_size) {
 
     std::ofstream out_file(filename); // attempt to open file
 
     if (out_file.is_open()) {
     	// lambda - values
-    	for (int lidx = 0; lidx < lamda_count; lidx++) {
+    	for (int lidx = 0; lidx < lambda_count; lidx++) {
     		out_file << lambda_arr[lidx] << " ";
     	}
 
@@ -50,7 +50,54 @@ void writeIqtToFile(std::string filename,
     	out_file << "\n";
 
     	// I(lambda, tau) - values
-		for (int li = 0; li < lamda_count; li++) {
+		
+	    for (int ti = 0; ti < tau_count; ti++) {
+			for (int l = 0; l < tile_size; l++){
+				out_file << h_accum_tmp[ti*tau_count+l] << " ";
+			}
+			out_file << "\n";
+	    }
+
+		out_file.close();
+		verbose("Non-averaged ISF written to %s\n", filename.c_str());
+
+    } else {
+		fprintf(stderr, "[Out Error] Unable to open %s.\n", filename.c_str());
+		exit(EXIT_FAILURE);
+    }
+
+
+}
+
+///////////////////////////////////////////////////////
+//	Writes ISF(lambda, tau) to file. The format of the
+//	output is described in detail in the documentation.
+///////////////////////////////////////////////////////
+void writeIqtToFile(std::string filename,
+					float *ISF,
+					float *lambda_arr, int lambda_count,
+					int   *tau_arr,	   int tau_count,
+					float fps) {
+
+    std::ofstream out_file(filename); // attempt to open file
+
+    if (out_file.is_open()) {
+    	// lambda - values
+    	for (int lidx = 0; lidx < lambda_count; lidx++) {
+    		out_file << lambda_arr[lidx] << " ";
+    	}
+
+    	out_file << "\n";
+
+    	// tau - values
+    	for (int ti = 0; ti < tau_count; ti++) {
+    		out_file << static_cast<float>(tau_arr[ti]) / fps << " ";
+    	}
+
+    	out_file << "\n";
+
+    	// I(lambda, tau) - values
+		for (int li = 0; li < lambda_count; li++) {
 	    	for (int ti = 0; ti < tau_count; ti++) {
 	    		out_file << ISF[li * tau_count + ti] << " ";
 	    	}
