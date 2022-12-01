@@ -15,7 +15,17 @@
 #################
 # ./main -o '/cicutagroup/yz655/cuda_run_result/multistream/fps_10_compressed_wheat_DJI_0050_al_20.8_fl_161_scale_7.74x/' -v -f '/cicutagroup/yz655/testing/fps_10_compressed_wheat_DJI_0050_al_20.8_fl_161_scale_7.74x.avi' -N 260 -C 100 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'
 
-./main -o '/cicutagroup/yz655/cuda_run_result/test_nonAve_ISF_DJI_0052/' -v -K -f '/cicutagroup/yz655/testing/fps_10_compressed_gray_DJI_0052.MP4' -N 260 -C 100 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'  
+# ./main -o '/cicutagroup/yz655/cuda_run_result/test_nonAve_ISF_DJI_0052/' -v -K -f '/cicutagroup/yz655/testing/fps_10_compressed_gray_DJI_0052.MP4' -N 260 -C 100 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'  
+
+# ./main -o '/cicutagroup/yz655/cuda_run_result/testing/test_nonAve_ISF_DJI_0052/' -v -K -f '/cicutagroup/yz655/testing/fps_10_compressed_gray_DJI_0052.MP4' -N 260 -C 100 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'  
+
+# ./main -o '/cicutagroup/yz655/cuda_run_result/testing/test_nonAve_ISF_compressed_fps10_WinterWheat1_2022-07-25-140826-0000/' -v -K -f '/cicutagroup/yz655/nott_videos/compressed_fps10_nott_videos/compressed_fps10_WinterWheat1_2022-07-25-140826-0000.avi' -N 300 -C 100 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'  
+
+# ./main -o '/cicutagroup/yz655/cuda_run_result/testing/test_nonAve_ISF_DJI_0050/' -v -K -f '/cicutagroup/yz655/drone_videos/compressed_fps10_gray_drone_videos/compressed_fps10_gray_DJI_0050.MP4' -N 300 -C 100 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'  
+
+./main -o '/cicutagroup/yz655/cuda_run_result/testing/test_nonAve_ISF_DJI_0052/' -v -K -f '/cicutagroup/yz655/drone_videos/compressed_fps10_gray_drone_videos/compressed_fps10_gray_DJI_0052.MP4' -N 300 -C 100 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'  
+
+
 
 # ./main -o '/cicutagroup/yz655/cuda_run_result/multistream/fps_10_compressed_gray_DJI_0051/' -v -f '/cicutagroup/yz655/testing/fps_10_compressed_gray_DJI_0051.MP4' -N 210 -C 210 -T '/cicutagroup/yz655/cuda_run/tau.txt' -S '/cicutagroup/yz655/cuda_run/scale.txt' -Q '/cicutagroup/yz655/cuda_run/lambda.txt'
 
