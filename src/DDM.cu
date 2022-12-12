@@ -78,7 +78,8 @@ void analyse_accums(int *scale_arr,	int scale_count,
 		            float **accum_list,
 		            int framerate,
                     float *h_accum_tmp,
-                    size_t ISF_size) {
+                    size_t ISF_size,
+                    bool nonAveOutput) {
 
 	int main_scale = scale_arr[0]; // the largest length-scale
 
@@ -120,12 +121,21 @@ void analyse_accums(int *scale_arr,	int scale_count,
 
             float *d_accum_tmp = accum_list[s] + tile_size * tile_idx * tau_count;
 
-            // copy non-averaged result from device to host
-			gpuErrorCheck(cudaMemcpy(h_accum_tmp, d_accum_tmp, tile_size * tau_count * sizeof(float), cudaMemcpyDeviceToHost));
+            if (nonAveOutput){
 
-            writeNonAveIqtToFile(tmp_filename_nonAve, h_accum_tmp, lambda_arr, lambda_count, tau_arr, tau_count, framerate, tile_size);
+                // wait for the device to finish all kernel operations
+                cudaDeviceSynchronize();
 
-            gpuErrorCheck(cudaMemset(h_accum_tmp, 0, ISF_size));
+                // copy non-averaged result from device to host
+                gpuErrorCheck(cudaMemcpy(h_accum_tmp, d_accum_tmp, tile_size * tau_count * sizeof(float), cudaMemcpyDeviceToHost));
+                // gpuErrorCheck(cudaMemcpyAsync(h_accum_tmp, d_accum_tmp, tile_size * tau_count * sizeof(float), cudaMemcpyDeviceToHost, stream));
+
+                writeNonAveIqtToFile(tmp_filename_nonAve, h_accum_tmp, lambda_arr, lambda_count, tau_arr, tau_count, framerate, tile_size);
+
+                // clear the temporary memory for non-Ave result
+                gpuErrorCheck(cudaMemset(h_accum_tmp, 0, ISF_size));
+
+            }
 
             float *ISF = analyseFFTDevice(d_accum_tmp, d_masks, h_pixel_counts, normalisation, tau_count, lambda_count, tile_count, scale, scale);
 
@@ -149,7 +159,12 @@ void parseChunk(unsigned char *d_raw_in,
                 int frame_count,
                 video_info_struct info,
                 cufftHandle *fft_plan_list,
-                cudaStream_t stream) {
+                cudaStream_t stream,
+                float *h_FFT_tmp,
+                float *d_FFT_amplitude_tmp,
+                bool FFTOutput,
+                size_t FFT_size,
+                std::string file_out) {
 
     int main_scale = scale_arr[0];
 
@@ -161,6 +176,13 @@ void parseChunk(unsigned char *d_raw_in,
 
     for (int s = 0; s < scale_count; s++) {
         int scale = scale_arr[s];
+        int tile_size = (scale / 2 + 1) * scale;
+        int tiles_per_side = (main_scale / scale);
+        int tiles_per_frame = tiles_per_side * tiles_per_side;
+        int frame_size = tile_size * tiles_per_frame * frame_count;
+
+        int px_count = scale * scale;
+        float fft_norm = 1.0f / px_count; // factor to normalise the FFT
 
         // mykernel<<<blocks, threads, shared_mem, stream>>>(args);
         parseBufferScalePow2<<<gridDim, blockDim, 0, stream>>>(d_raw_in, d_workspace, info.bpp, 0, info.w, info.h, info.x_off, info.y_off, scale, main_scale, frame_count);
@@ -168,6 +190,26 @@ void parseChunk(unsigned char *d_raw_in,
 
         int exe_code = cufftExecR2C(fft_plan_list[s], d_workspace, d_fft_list_out[s]);
         conditionAssert(exe_code == CUFFT_SUCCESS, "cuFFT execution failure", true);
+
+        if (FFTOutput){
+            // TODOTODO
+            cudaStreamSynchronize(stream);
+
+            calculateAmplitude<<<gridDim, blockDim, 0, stream>>>(d_fft_list_out[s], d_FFT_amplitude_tmp, fft_norm, frame_size);
+
+            // copy non-averaged result from device to host
+            gpuErrorCheck(cudaMemcpy(h_FFT_tmp, d_FFT_amplitude_tmp, sizeof(float) * frame_count * tile_size * tiles_per_frame, cudaMemcpyDeviceToHost));
+            // gpuErrorCheck(cudaMemcpyAsync(h_FFT_tmp, d_accum_tmp, tile_size * tau_count * sizeof(float), cudaMemcpyDeviceToHost, stream));
+
+            std::string tmp_filename_FFT = file_out + "-" + std::to_string(scale); //output filenames in the style ./<filename><scale>-<tile idx>-nonAve
+
+            writeFFTToFile(tmp_filename_FFT, h_FFT_tmp, frame_count, tiles_per_frame, tile_size);
+
+            // clear the temporary memory for non-Ave result
+            gpuErrorCheck(cudaMemset(h_FFT_tmp, 0, FFT_size));
+            gpuErrorCheck(cudaMemset(d_FFT_amplitude_tmp, 0, FFT_size));
+        }
+
     }
 }
 
@@ -176,13 +218,12 @@ void parseChunk(unsigned char *d_raw_in,
 //  This function handles the analysis of the FFT, i.e. handles the calculation
 //  of the difference functions. Makes use of 3-section circular buffer - see project
 ////////////////////////////////////////////////////////////////////////////////
-// analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, leftover_frames, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
+// analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
 void analyseChunk(cufftComplex **d_fft_buffer1,
                   cufftComplex **d_fft_buffer2,
                   float **d_fft_accum_list,
                   int scale_count,
                   int *scale_vector,
-                  int frame_count,
                   int chunk_frame_count,
                   int frame_offset,
                   int tau_count,
@@ -247,7 +288,8 @@ void runDDM(std::string file_in,
 			float explicit_fps,
             int dump_accum_after,
 			bool benchmark_mode,
-            bool nonAveOutput) {
+            bool nonAveOutput,
+            bool FFTOutput) {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     verbose("[multiDDM Begin]\n");
@@ -487,12 +529,23 @@ void runDDM(std::string file_in,
 
     // host memory for non-averaged ISF output, TODO
     float *h_accum_tmp;
+    float *h_FFT_tmp;
+    float *d_FFT_amplitude_tmp;
 
-    size_t ISF_size = sizeof(float) * main_scale * main_scale * tau_count;
+    int main_tile_size = (main_scale / 2 + 1) * main_scale; 
+    size_t ISF_size = sizeof(float) * main_tile_size * tau_count;
+    size_t FFT_size = sizeof(float) * chunk_frame_count * main_tile_size;
 
     if (nonAveOutput) {
         gpuErrorCheck(cudaHostAlloc((void **) &h_accum_tmp, ISF_size, cudaHostAllocDefault));
     }
+
+    if (FFTOutput){
+        gpuErrorCheck(cudaHostAlloc((void **) &h_FFT_tmp, FFT_size, cudaHostAllocDefault));
+        gpuErrorCheck(cudaMalloc((void** ) &d_FFT_amplitude_tmp, FFT_size));
+    }
+
+    
 
     // work space (multi-stream)
     size_t workspace_size = sizeof(float) * chunk_frame_count * main_scale * main_scale;
@@ -701,8 +754,10 @@ void runDDM(std::string file_in,
     verbose("Video loaded to host\n");
     gpuErrorCheck(cudaMemcpyAsync(d_idle, h_chunk_nxt, chunk_size, cudaMemcpyHostToDevice, *stream_cur));
     verbose("GPU error check\n");
+
+    std::string tmp_name = file_out + "_fft_chunk_init_" + std::to_string(chunks_already_parsed);
     
-    parseChunk(d_idle, d_start_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur);
+    parseChunk(d_idle, d_start_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur, h_FFT_tmp, d_FFT_amplitude_tmp, FFTOutput, FFT_size, tmp_name);
 
     gpuErrorCheck(cudaStreamSynchronize(*stream_cur));
     verbose("Parse chunk\n");
@@ -711,10 +766,12 @@ void runDDM(std::string file_in,
 
         gpuErrorCheck(cudaMemcpyAsync(d_ready, h_chunk_cur, chunk_size, cudaMemcpyHostToDevice, *stream_cur));
 
-        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur);
+        std::string tmp_name = file_out + "_fft_chunk_" + std::to_string(chunks_already_parsed);
+
+        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_vector, scale_count, chunk_frame_count, info, FFT_plan_list, *stream_cur, h_FFT_tmp, d_FFT_amplitude_tmp, FFTOutput, FFT_size, tmp_name);
 
         for (int frame_offset = 0; frame_offset < chunk_frame_count; frame_offset += 1) {
-            analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, leftover_frames, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
+            analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
         }
 
         // prevent overrun
@@ -752,23 +809,8 @@ void runDDM(std::string file_in,
 
             std::string tmp_name = file_out + "_t" + std::to_string(chunks_already_parsed / dump_accum_after) + "_";
 
-            // d_accum_list_cur should be the non-averaged FFT result 
-
-                // for (int s = 0; s < scale_count; s++) {
-                //     int scale = scale_vector[s];
-                //     int tiles_per_frame = (main_scale / scale) * (main_scale / scale);
-                //     accum_size += sizeof(float) * (scale / 2 + 1) * scale * tiles_per_frame * tau_count;
-                // }
-
-                // float *d_accum_1;
-                // float *d_accum_2;
-
-                // if (multistream) {
-                //     gpuErrorCheck(cudaMalloc((void** ) &d_accum_1, accum_size));
-
-
             // analyse_accums() average the FFT result 
-            analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, tmp_frame_count, mask_tolerance, tmp_name, d_accum_list_cur, info.fps, h_accum_tmp, ISF_size);
+            analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, tmp_frame_count, mask_tolerance, tmp_name, d_accum_list_cur, info.fps, h_accum_tmp, ISF_size, nonAveOutput);
 
             verbose("[Purging Accumulator]\n");
 
@@ -790,10 +832,13 @@ void runDDM(std::string file_in,
         size_t extra_frames_size = sizeof(unsigned char) * leftover_frames * info.bpp * info.w * info.h;
 
         gpuErrorCheck(cudaMemcpyAsync(d_ready, h_chunk_cur, extra_frames_size, cudaMemcpyHostToDevice, *stream_cur));
-        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_vector, scale_count, leftover_frames, info, FFT_plan_list, *stream_cur);
+
+        std::string tmp_name = file_out + "_fft_chunk_left";
+
+        parseChunk(d_ready, d_end_list, d_workspace_cur, scale_vector, scale_count, leftover_frames, info, FFT_plan_list, *stream_cur, h_FFT_tmp, d_FFT_amplitude_tmp, FFTOutput, FFT_size, tmp_name);
 
         for (int frame_offset = 0; frame_offset < leftover_frames; frame_offset += 1) {
-            analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector, leftover_frames, chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
+            analyseChunk(d_start_list, d_end_list, d_accum_list_cur, scale_count, scale_vector,  chunk_frame_count, frame_offset, tau_count, tau_vector, *stream_cur);
         }
     }
     cudaDeviceSynchronize();
@@ -813,6 +858,8 @@ void runDDM(std::string file_in,
     cudaFree(d_workspace_1);
     cudaFree(d_workspace_2);
     cudaFree(h_accum_tmp);
+    cudaFree(h_FFT_tmp);
+    cudaFree(d_FFT_amplitude_tmp);
 
     if (multistream) {
         combineAccumulators(d_accum_list_cur, d_accum_list_nxt, scale_vector, scale_count, tau_count);
@@ -824,8 +871,9 @@ void runDDM(std::string file_in,
     //////////analyseChunk
     verbose("Analysis.\n");
 
-    int frames_left = total_frames - chunks_already_parsed * chunk_frame_count;
-    analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, frames_left, mask_tolerance, file_out, d_accum_list_cur, info.fps, h_accum_tmp, ISF_size);
+    // int frames_left = total_frames - chunks_already_parsed * chunk_frame_count;
+    int frames_analysed = total_frames;
+    analyse_accums(scale_vector, scale_count, lambda_arr, lambda_count, tau_vector, tau_count, frames_analysed, mask_tolerance, file_out, d_accum_list_cur, info.fps, h_accum_tmp, ISF_size, nonAveOutput);
 
     cudaDeviceSynchronize();
     cudaFree(d_accum_1);

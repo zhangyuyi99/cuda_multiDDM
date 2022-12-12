@@ -101,6 +101,27 @@ __global__ void processFFT(const cufftComplex* __restrict__ d_dataA,
 }
 
 ///////////////////////////////////////////////////////
+// GPU function to calculate the amplitude of FFT 
+///////////////////////////////////////////////////////
+// processFFT<<<gridDim, blockDim, 0, stream>>>(d_fft_buffer1[s] + frame_size * frame_offset, tmp, accum_out, fft_norm, frame_size);
+__global__ void calculateAmplitude(const cufftComplex* __restrict__ d_data,
+                           float * __restrict__ d_odata,
+                           float fft_norm,
+                           int frame_size) {
+
+    unsigned int i = blockIdx.x * BLOCKSIZE + threadIdx.x;
+
+    if (i < frame_size) {
+        cufftComplex val;
+        val.x = fft_norm * (d_data[i].x);
+        val.y = fft_norm * (d_data[i].y);
+
+        d_odata[i] = val.x * val.x + val.y * val.y;
+
+    }
+}
+
+///////////////////////////////////////////////////////
 // Simple GPU function to combine two accumulator arrays - for use if using CUDA streams
 ///////////////////////////////////////////////////////
 __global__ void combineAccum(float* __restrict__ d_dataA,

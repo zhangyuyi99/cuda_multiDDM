@@ -22,6 +22,42 @@ inline unsigned int nextPow2(unsigned int x) {
   return ++x;
 }
 
+
+///////////////////////////////////////////////////////
+//	Writes primary FFT results to file. The format of the
+//	output is described in detail in the documentation.
+///////////////////////////////////////////////////////
+// writeFFTToFile(tmp_filename_FFT, h_FFT_tmp, frame_count, tiles_per_frame, tile_size);
+void writeFFTToFile(std::string filename,
+					float *h_FFT_tmp,
+					int frame_count,
+					int tiles_per_frame,
+					int tile_size) {
+
+    std::ofstream out_file(filename); // attempt to open file
+
+    if (out_file.is_open()) {
+		
+	    for (int fc = 0; fc < frame_count; fc++) {
+			for (int tpf = 0; tpf < tiles_per_frame; tpf++){
+				for (int l = 0; l < tile_size; l++){
+					out_file << h_FFT_tmp[tile_size*tiles_per_frame*fc + tile_size*tpf +l] << " ";	
+				}
+				out_file << "\n";
+			}
+	    }
+
+		out_file.close();
+		verbose("Primary FFT is written to %s\n", filename.c_str());
+
+    } else {
+		fprintf(stderr, "[Out Error] Unable to open %s.\n", filename.c_str());
+		exit(EXIT_FAILURE);
+    }
+
+
+}
+
 ///////////////////////////////////////////////////////
 //	Writes non-averaged ISF to file. The format of the
 //	output is described in detail in the documentation.

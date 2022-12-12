@@ -38,4 +38,10 @@ void writeNonAveIqtToFile(std::string filename,
 					int   *tau_arr,	   int tau_count,
 					float fps, int tile_size); 
 
+void writeFFTToFile(std::string filename,
+					float *h_FFT_tmp,
+					int frame_count,
+					int tiles_per_frame,
+					int tile_size);
+
 #endif

@@ -21,7 +21,7 @@ struct DDMparams
     int x_off = 0;          // number of pixels to offset x=0 by in frame
     int y_off = 0;          // number of pixels to offset y=0 by in frame
     int chunk_length = 100; // number of frames in frame buffer
-    int rolling_purge = 0;  // purge and analyse accumulators after number of frames
+    int rolling_purge = 0;  // purge and analyse accumulators after number of frames (or chunks?)
 
     bool use_webcam = false;
     int webcam_idx = 0;
@@ -33,6 +33,7 @@ struct DDMparams
     float q_tolerence = 1.2;
     bool benchmark_mode = false;
     bool nonAveOutput = false;
+    bool FFTOutput = false;
 } params;
 
 // forward declare main DDM function
@@ -59,7 +60,8 @@ void runDDM(std::string file_in,
             float explicit_fps,
             int dump_accum_after,
             bool benchmark_mode,
-            bool nonAveOutput);
+            bool nonAveOutput,
+            bool FFTOutput);
 
 void printHelp()
 {
@@ -92,7 +94,8 @@ void printHelp()
             "  -G SIZE      Sub-divide analysis, buffer will be output and purged every SIZE chunks\n"
             "  -M			Set if using movie-file format.\n"
             "  -F FPS 		Force the analysis to assume a specific frame-rate, over-rides other options.\n"
-            "  -K    		Output non-averaged ISF results.");
+            "  -K    		Output non-averaged ISF results.\n"
+            "  -A    		Output primary FFT results.");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -109,7 +112,7 @@ int main(int argc, char **argv)
 
     for (;;)
     {
-        switch (getopt(argc, argv, "ho:N:s:x:y:Q:T:S:If:W::vZt:C:MG:F:B:K"))
+        switch (getopt(argc, argv, "ho:N:s:x:y:Q:T:S:If:W::vZt:C:MG:F:B:K:A"))
         {
         case '?':
         case 'h':
@@ -220,6 +223,14 @@ int main(int argc, char **argv)
             params.nonAveOutput = true;
         }
             continue;
+
+        case 'A':
+        {
+            params.FFTOutput = true;
+        }
+        
+            continue;
+
         }
         break;
     }
@@ -324,7 +335,8 @@ int main(int argc, char **argv)
            params.explicit_fps,
            params.rolling_purge,
            params.benchmark_mode,
-           params.nonAveOutput);
+           params.nonAveOutput,
+           params.FFTOutput);
 
     printf("DDM End\n");
 }
